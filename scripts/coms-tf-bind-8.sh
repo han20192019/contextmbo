@@ -4,7 +4,7 @@ IFS=, read -ra DEVICES <<< "$CUDA_VISIBLE_DEVICES"
 for OE_LIMIT in 0.4 0.5 0.6 0.8 1.0; do
 for DEVICE in "${DEVICES[@]}"; do
     for TRIAL in $(seq $NUM_TRIALS_PER_GPU); do
-        CUDA_VISIBLE_DEVICES=$DEVICE coms \
+        CUDA_VISIBLE_DEVICES=$DEVICE coms_cleaned \
             --logging-dir ~/coms-tf-bind-8/coms-tf-bind-8-$OE_LIMIT/COMs-TFBind8-Exact-v0-$DEVICE-$TRIAL-$RANDOM \
             --task TFBind8-Exact-v0 \
             --no-task-relabel \
