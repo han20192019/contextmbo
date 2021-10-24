@@ -172,10 +172,17 @@ def rep(
     initial_x = tf.gather(x, indices, axis=0)
     initial_y = tf.gather(y, indices, axis=0)
     xt = initial_x
+    print("xt shape:")
+    print(xt.shape)
     score = task.predict(xt)
     print(xt)
     print(score)
     solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy()
+    solution = tf.reshape(solution, [solution.shape[0], solution.shape[2]])
+    print("solution:")
+    print(solution)
+    print("solution shape:")
+    print(solution.shape)
     prediction = task.predict(solution) 
 
     if normalize_ys:
@@ -183,10 +190,11 @@ def rep(
         prediction = task.denormalize_y(prediction)
 
     # record the prediction and score to the logger
-    logger.record(f"score", score, percentile=True)
+    step = 0
+    logger.record(f"score", score, step, percentile=True)
     logger.record(f"solver/model_to_real",
-                    spearman(prediction[:, 0], score[:, 0]))
+                    spearman(prediction[:, 0], score[:, 0]), step)
     logger.record(f"solver/prediction",
-                    prediction)
+                    prediction, step)
     logger.record(f"solver/overestimation",
-                    prediction - score)
+                    prediction - score, step)

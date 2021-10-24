@@ -287,7 +287,6 @@ class StaticGraphTask(Task):
             when it is created using design_bench.make
 
         """
-
         # use the design_bench registry to make a task
         self.wrapped_task = make(task_name, **task_kwargs)
 
