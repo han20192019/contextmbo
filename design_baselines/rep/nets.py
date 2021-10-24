@@ -23,7 +23,6 @@ def RepModel(input_shape,
                 activations=('relu', 'relu'),
                 hidden_size=2048,
                 final_tanh=False):
-    final_out = output_shape[0] * output_shape[1]
     activations = [tfkl.LeakyReLU if act == 'leaky_relu' else
                    act for act in activations]
 
@@ -31,9 +30,9 @@ def RepModel(input_shape,
     for act in activations:
         layers.extend([tfkl.Dense(hidden_size), tfkl.Activation(act)
                        if isinstance(act, str) else act()])
-    layers.extend([tfkl.Dense(final_out)])
-    if final_tanh:
-        layers.extend([TanhMultiplier()])
+    layers.extend([tfkl.Dense(np.prod(output_shape))])
+    # if final_tanh:
+    #     layers.extend([TanhMultiplier()])
     return tf.keras.Sequential(layers)
 
     
@@ -62,7 +61,7 @@ def ForwardModel(input_shape,
                    act for act in activations]
 
     layers = [] 
-    # layers = [tfkl.Flatten(input_shape=input_shape)]
+    layers = [tfkl.Flatten(input_shape=input_shape)]
     for act in activations:
         layers.extend([tfkl.Dense(hidden_size), tfkl.Activation(act)
                        if isinstance(act, str) else act()])
@@ -73,12 +72,11 @@ def ForwardModel(input_shape,
 
 
 
-class PolicyForwardModel(tf.keras.Sequential):
+class PolicyContinuousForwardModel(tf.keras.Sequential):
     """A Fully Connected Network with 2 trainable layers"""
 
-    distribution = tfpd.MultivariateNormalDiag
 
-    def __init__(self, task, latent_size=20, embedding_size=50, hidden_size=50,
+    def __init__(self, input_shape, task, latent_size=20, embedding_size=50, hidden_size=10,
                  num_layers=1, initial_max_std=1.5, initial_min_std=0.5):
         """Create a fully connected architecture using keras that can process
         several parallel streams of weights and biases
@@ -100,23 +98,21 @@ class PolicyForwardModel(tf.keras.Sequential):
         initial_min_std: float
             the starting lower bound of the standard deviation
         """
-
+        self.distribution = tfpd.MultivariateNormalDiag
         self.max_logstd = tf.Variable(tf.fill([1, 1], np.log(
             initial_max_std).astype(np.float32)), trainable=True)
         self.min_logstd = tf.Variable(tf.fill([1, 1], np.log(
             initial_min_std).astype(np.float32)), trainable=True)
+        layers = [tfkl.Flatten(input_shape=input_shape)]
 
-        layers = []
-        if task.is_discrete:
-            layers.append(tfkl.Embedding(task.num_classes, embedding_size,
-                                         input_shape=task.input_shape))
-        layers.append(tfkl.Flatten(input_shape=task.input_shape)
-                      if len(layers) == 0 else tfkl.Flatten())
         for i in range(num_layers):
             layers.extend([tfkl.Dense(hidden_size), tfkl.LeakyReLU()])
 
-        layers.append(tfkl.Dense(latent_size * 2))
-        super(PolicyForwardModel, self).__init__(layers)
+        if task.is_discrete:
+            layers.append(tfkl.Dense(np.prod(task.input_shape)))
+        else:
+            layers.append(tfkl.Dense(np.prod(task.input_shape)*2))
+        super(PolicyContinuousForwardModel, self).__init__(layers)
 
     def get_params(self, inputs, **kwargs):
         """Return a dictionary of parameters for a particular distribution
@@ -133,13 +129,13 @@ class PolicyForwardModel(tf.keras.Sequential):
             a dictionary that contains 'loc' and 'scale_diag' keys
         """
 
-        prediction = super(PolicyForwardModel, self).__call__(inputs, **kwargs)
+        prediction = super(PolicyContinuousForwardModel, self).__call__(inputs, **kwargs)
         mean, logstd = tf.split(prediction, 2, axis=-1)
         logstd = self.max_logstd - tf.nn.softplus(self.max_logstd - logstd)
         logstd = self.min_logstd + tf.nn.softplus(logstd - self.min_logstd)
         return {"loc": mean, "scale_diag": tf.math.softplus(logstd)}
 
-    def get_distribution(self, inputs, **kwargs):
+    def get_distribution(self, **kwargs):
         """Return a distribution over the outputs of this model, for example
         a Multivariate Gaussian Distribution
 
@@ -153,13 +149,87 @@ class PolicyForwardModel(tf.keras.Sequential):
         distribution: tfp.distribution.Distribution
             a tensorflow probability distribution over outputs of the model
         """
-
+        noise_input_shape = 10
+        noise_dist = tfpd.MultivariateNormalDiag(loc=[0] * noise_input_shape, scale_diag=[0.1] * noise_input_shape)
+        inputs = noise_dist.sample(1) # (10,1)
         return self.distribution(**self.get_params(inputs, **kwargs))
 
     
     def get_density(self, inputs, **kwargs):
-        self.dist = self.get_distribution(inputs, **kwargs)
+        self.dist = self.get_distribution(**kwargs)
         return self.dist.prob(inputs)
 
-    def get_sample(self, size):
+
+    def get_sample(self, size, **kwargs):
+        self.dist = self.get_distribution(**kwargs)
+        return self.dist.sample(size)
+
+
+
+class PolicyDiscreteForwardModel(tf.keras.Sequential):
+    """A Fully Connected Network with 2 trainable layers"""
+
+
+    def __init__(self, task, latent_size, hidden_size=50,
+                 num_layers=1, **kwargs):
+        """Create a fully connected architecture using keras that can process
+        several parallel streams of weights and biases
+        Args:
+        task: StaticGraphTask
+            a model-based optimization task
+        latent_size: int
+            the cardinality of the latent variable
+        hidden_size: int
+            the global hidden size of the neural network
+        """
+        self.distribution = tfpd.Categorical
+
+        layers = []
+        for i in range(num_layers):
+            kwargs = dict()
+            if i == 0:
+                kwargs["input_shape"] = (latent_size,)
+            layers.extend([tfkl.Dense(hidden_size, **kwargs),
+                           tfkl.LeakyReLU()])
+
+        layers.append(tfkl.Dense(np.prod(task.input_shape) * task.num_classes))
+        layers.append(tfkl.Reshape(list(task.input_shape) + [task.num_classes]))
+        super(PolicyDiscreteForwardModel, self).__init__(layers)
+
+    def get_params(self, inputs, **kwargs):
+        """Return a dictionary of parameters for a particular distribution
+        family such as the mean and variance of a gaussian
+        Args:
+        inputs: tf.Tensor
+            a batch of training inputs shaped like [batch_size, channels]
+        Returns:
+        parameters: dict
+            a dictionary that contains 'loc' and 'scale_diag' keys
+        """
+
+        x = super(PolicyDiscreteForwardModel, self).__call__(inputs, **kwargs)
+        logits = tf.math.log_softmax(x, axis=-1)
+        return {"logits": logits}
+
+    def get_distribution(self, inputs, **kwargs):
+        """Return a distribution over the outputs of this model, for example
+        a Multivariate Gaussian Distribution
+        Args:
+        inputs: tf.Tensor
+            a batch of training inputs shaped like [batch_size, channels]
+        Returns:
+        distribution: tfp.distribution.Distribution
+            a tensorflow probability distribution over outputs of the model
+        """
+
+        return self.distribution(
+            **self.get_params(inputs, **kwargs), dtype=tf.int32)
+
+    def get_density(self, inputs, **kwargs):
+        self.dist = self.get_distribution(**kwargs)
+        return self.dist.prob(inputs)
+
+
+    def get_sample(self, size, **kwargs):
+        self.dist = self.get_distribution(**kwargs)
         return self.dist.sample(size)

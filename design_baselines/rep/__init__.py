@@ -3,7 +3,8 @@ from design_baselines.logger import Logger
 from design_baselines.utils import spearman
 from design_baselines.rep.trainers import RepresentationLearningModel
 from design_baselines.rep.nets import ForwardModel
-from design_baselines.rep.nets import PolicyForwardModel
+from design_baselines.rep.nets import PolicyContinuousForwardModel
+from design_baselines.rep.nets import PolicyDiscreteForwardModel
 from design_baselines.rep.nets import RepModel
 import tensorflow as tf
 import numpy as np
@@ -18,6 +19,8 @@ def rep(
         task_relabel,
         normalize_ys,
         normalize_xs,
+        latent_space_size,
+        noise_shape,
         in_latent_space,
         vae_hidden_size,
         vae_latent_size,
@@ -63,6 +66,8 @@ def rep(
         task_relabel=task_relabel,
         normalize_ys=normalize_ys,
         normalize_xs=normalize_xs,
+        latent_space_size=latent_space_size,
+        noise_shape=noise_shape,
         in_latent_space=in_latent_space,
         vae_hidden_size=vae_hidden_size,
         vae_latent_size=vae_latent_size,
@@ -119,7 +124,8 @@ def rep(
     y = task.y
 
     input_shape = x.shape[1:]
-    output_shape = [32,3]
+    output_shape = latent_space_size
+    noise_input = noise_shape
 
     # compute the normalized learning rate of the model
     particle_lr = particle_lr * np.sqrt(np.prod(input_shape))
@@ -135,7 +141,10 @@ def rep(
         hidden_size=forward_model_hidden_size,
         final_tanh=forward_model_final_tanh)
 
-    policy_model = PolicyForwardModel(task) 
+    if task.is_discrete:
+        policy_model = PolicyDiscreteForwardModel(task) 
+    else: 
+        policy_model = PolicyContinuousForwardModel(noise_input, task) 
 
     # make a trainer for the forward model
     trainer = RepresentationLearningModel(
@@ -155,3 +164,29 @@ def rep(
     # train the forward model
     trainer.launch(train_data, validate_data,
                    logger, forward_model_epochs)
+
+
+    ## evaluation TODO
+    print("start evaluation")
+    indices = tf.math.top_k(y[:, 0], k=evaluation_samples)[1]
+    initial_x = tf.gather(x, indices, axis=0)
+    initial_y = tf.gather(y, indices, axis=0)
+    xt = initial_x
+    score = task.predict(xt)
+    print(xt)
+    print(score)
+    solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy()
+    prediction = task.predict(solution) 
+
+    if normalize_ys:
+        score = task.denormalize_y(score)
+        prediction = task.denormalize_y(prediction)
+
+    # record the prediction and score to the logger
+    logger.record(f"score", score, percentile=True)
+    logger.record(f"solver/model_to_real",
+                    spearman(prediction[:, 0], score[:, 0]))
+    logger.record(f"solver/prediction",
+                    prediction)
+    logger.record(f"solver/overestimation",
+                    prediction - score)

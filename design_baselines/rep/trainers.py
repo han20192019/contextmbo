@@ -15,7 +15,7 @@ class RepresentationLearningModel(tf.Module):
                  policy_model_opt=tf.keras.optimizers.Adam,
                  policy_model_lr=0.001,
                  L2_alpha=1.0,
-                 MMD_alpha=1.0, reward_alpha=1.0
+                 mmd_alpha=1.0, reward_alpha=1.0
                  ):
         
         super().__init__()
@@ -28,42 +28,55 @@ class RepresentationLearningModel(tf.Module):
             policy_model_opt(learning_rate=policy_model_lr)
         self.rep_model_opt = \
             rep_model_opt(learning_rate=rep_model_lr)
+        self.L2_alpha = L2_alpha
+        self.mmd_alpha = mmd_alpha
+        self.reward_alpha = reward_alpha
 
-
+    # @tf.function(experimental_relax_shapes=True)
     def train_step_fphi(self, x, y):
         statistics = dict()
         with tf.GradientTape(persistent=True) as tape:
-            
             repx = self.rep_model(x, training=True)
             d_pos = self.forward_model(repx, training=True)
 
             # Policy Reward
-            density = self.policy_model.get_density(x, training=False)
-            rewards = tf.tensordot(d_pos, density)
+            learned_x = self.policy_model.get_sample(size=100, training=False)
+            learned_x = tf.reshape(learned_x, (100, 60))
+            rep_learnedx = self.rep_model(learned_x, training=True)
+            d_pos_learned = self.forward_model(rep_learnedx, training=True)
+            rewards = tf.reduce_mean(d_pos_learned)
             statistics[f'train/rewards'] = rewards
+            # print(f"rewards: {rewards}" )
 
             # L2 loss
-            mse = tf.keras.losses.mean_squared_error(y, d_pos)
+            mse = tf.reduce_mean(tf.keras.losses.mean_squared_error(y, d_pos))
             statistics[f'train/mse'] = mse
+            # print(f"mse: {mse}" )
 
             # MMD loss
-            learned_x = self.policy_model.get_sample(x, training=False)
-            learned_rep = tf.reduce_mean(self.rep_model(learned_x, training=True))
-            logged_rep = tf.reduce_mean(repx)
-            mmd = (learned_rep - logged_rep) ** 2
+            learned_rep = tf.reduce_mean(rep_learnedx, axis=0)
+            logged_rep = tf.reduce_mean(repx, axis=0)
+
+            mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
             statistics[f'train/mmd'] = mmd
+            # print(f"mmd: {mmd}" )
+
+            loss1 = -self.reward_alpha * rewards + self.L2_alpha * mse + self.mmd_alpha * mmd 
+            loss2 = self.reward_alpha * rewards + self.L2_alpha * mse + self.mmd_alpha * mmd  
 
         # calculate gradients using the model
-        phi_grads = tape.gradient(-rewards + mse + mmd, self.rep_model.train)
-        f_grads = tape.gradient(rewards + mse + mmd, self.forward_model.train)
+        phi_grads = tape.gradient(loss1, self.rep_model.trainable_variables)
+        f_grads = tape.gradient(loss2, self.forward_model.trainable_variables)
 
         self.forward_model_opt.apply_gradients(zip(
             f_grads, self.forward_model.trainable_variables))
 
         self.rep_model_opt.apply_gradients(zip(
-            phi_grads, self.forward_model.trainable_variables))
+            phi_grads, self.rep_model.trainable_variables))
+        
+        return statistics
 
-
+    # @tf.function(experimental_relax_shapes=True)
     def train_step_pi(self, x):
         statistics = dict()
         with tf.GradientTape(persistent=True) as tape:
@@ -72,21 +85,22 @@ class RepresentationLearningModel(tf.Module):
             d_pos = self.forward_model(repx, training=False)
 
             # Policy Reward
-            density = self.policy_model.get_density(x, training=False)
-            rewards = tf.tensordot(d_pos, density)
+            learned_x = self.policy_model.get_sample(size=100, training=True)
+            learned_x = tf.reshape(learned_x, (100, 60))
+            rep_learnedx = self.rep_model(learned_x, training=True)
+            d_pos_learned = self.forward_model(rep_learnedx, training=True)
+            rewards = tf.reduce_mean(d_pos_learned)
             statistics[f'train/rewards'] = rewards
 
-            # MMD loss
-            learned_x = self.policy_model.get_sample(x, training=False)
-            learned_rep = tf.reduce_mean(self.rep_model(learned_x, training=True))
-            logged_rep = tf.reduce_mean(repx)
-            mmd = (learned_rep - logged_rep) ** 2
-            statistics[f'train/mmd'] = mmd
+            loss = -rewards
+
 
         # calculate gradients using the model
-        pi_grads = tape.gradient(-rewards + mmd, self.policy_model.train)
+        pi_grads = tape.gradient(loss, self.policy_model.trainable_variables)
         self.policy_model_opt.apply_gradients(zip(
             pi_grads, self.policy_model.trainable_variables))
+        
+        return statistics
 
 
     def train_fphi(self, dataset):
@@ -130,7 +144,7 @@ class RepresentationLearningModel(tf.Module):
 
         statistics = defaultdict(list)
         for x, y in dataset:
-            for name, tensor in self.train_step_pi(x, y).items():
+            for name, tensor in self.train_step_pi(x).items():
                 statistics[name].append(tensor)
         for name in statistics.keys():
             statistics[name] = tf.concat(statistics[name], axis=0)
@@ -152,8 +166,8 @@ class RepresentationLearningModel(tf.Module):
         epochs: int
             the number of epochs through the data sets to take
         """
-
         for e in range(epochs):
+            print(e)
             for name, loss in self.train_fphi(train_data).items():
                 logger.record(name, loss, e)
             for name, loss in self.train_pi(train_data).items():
