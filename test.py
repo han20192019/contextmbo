@@ -2,7 +2,7 @@ from design_baselines.cbas import cbas
 from design_baselines.rep import rep
 from design_baselines.coms_cleaned import coms_cleaned
 rep(logging_dir="data",
-                        task='AntMorphology-Exact-v0', #Discrete: TFBind8-Exact-v0
+                        task='TFBind8-Exact-v0', #'AntMorphology-Exact-v0', #Discrete: TFBind8-Exact-v0
                         task_relabel=True,
                         normalize_ys=True,
                         normalize_xs=True,

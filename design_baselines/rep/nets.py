@@ -170,7 +170,7 @@ class PolicyDiscreteForwardModel(tf.keras.Sequential):
     """A Fully Connected Network with 2 trainable layers"""
 
 
-    def __init__(self, task, latent_size, hidden_size=50,
+    def __init__(self, task, input_shape, hidden_size=50,
                  num_layers=1, **kwargs):
         """Create a fully connected architecture using keras that can process
         several parallel streams of weights and biases
@@ -184,11 +184,8 @@ class PolicyDiscreteForwardModel(tf.keras.Sequential):
         """
         self.distribution = tfpd.Categorical
 
-        layers = []
+        layers = [tfkl.Flatten(input_shape=input_shape)]
         for i in range(num_layers):
-            kwargs = dict()
-            if i == 0:
-                kwargs["input_shape"] = (latent_size,)
             layers.extend([tfkl.Dense(hidden_size, **kwargs),
                            tfkl.LeakyReLU()])
 
@@ -206,7 +203,6 @@ class PolicyDiscreteForwardModel(tf.keras.Sequential):
         parameters: dict
             a dictionary that contains 'loc' and 'scale_diag' keys
         """
-
         x = super(PolicyDiscreteForwardModel, self).__call__(inputs, **kwargs)
         logits = tf.math.log_softmax(x, axis=-1)
         return {"logits": logits}
@@ -226,8 +222,11 @@ class PolicyDiscreteForwardModel(tf.keras.Sequential):
             **self.get_params(inputs, **kwargs), dtype=tf.int32)
 
     def get_density(self, inputs, **kwargs):
-        self.dist = self.get_distribution(**kwargs)
-        return self.dist.prob(inputs)
+        self.dist = self.get_distribution(inputs, **kwargs)
+        logits = self.get_params(inputs, **kwargs)["logits"]
+        density = tf.reduce_sum(tf.math.multiply(logits, inputs), axis=2)
+        density = tf.exp(tf.reduce_sum(density, axis=1))
+        return density
 
 
     def get_sample(self, size, **kwargs):

@@ -33,6 +33,8 @@ def reinforce(config):
     x = task.x
     y = task.y
 
+        
+
     # create the training task and logger
     train_data, val_data = build_pipeline(
         x=x, y=y, bootstraps=config['bootstraps'],

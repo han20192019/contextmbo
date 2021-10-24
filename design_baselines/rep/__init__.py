@@ -115,20 +115,22 @@ def rep(
 
     if normalize_ys:
         task.map_normalize_y()
-    if task.is_discrete and not in_latent_space:
-        task.map_to_logits()
-    if normalize_xs:
+    # if task.is_discrete and not in_latent_space:
+    #     task.map_to_logits()
+    if normalize_xs and not task.is_discrete:
         task.map_normalize_x()
+    if task.is_discrete:
+        task.map_to_integers()
 
     x = task.x
     y = task.y
 
+
     input_shape = x.shape[1:]
     output_shape = latent_space_size
     noise_input = noise_shape
-
-    # compute the normalized learning rate of the model
-    particle_lr = particle_lr * np.sqrt(np.prod(input_shape))
+    if task.is_discrete:
+        input_shape = (input_shape[0], task.num_classes)
 
     # make a neural network to predict scores
     rep_model = RepModel(
@@ -142,12 +144,12 @@ def rep(
         final_tanh=forward_model_final_tanh)
 
     if task.is_discrete:
-        policy_model = PolicyDiscreteForwardModel(task) 
+        policy_model = PolicyDiscreteForwardModel(task, input_shape) 
     else: 
         policy_model = PolicyContinuousForwardModel(noise_input, task) 
 
     # make a trainer for the forward model
-    trainer = RepresentationLearningModel(
+    trainer = RepresentationLearningModel(task,
         rep_model, forward_model, policy_model,
         forward_model_opt=tf.keras.optimizers.Adam,
         forward_model_lr=forward_model_lr,
@@ -171,19 +173,14 @@ def rep(
     indices = tf.math.top_k(y[:, 0], k=evaluation_samples)[1]
     initial_x = tf.gather(x, indices, axis=0)
     initial_y = tf.gather(y, indices, axis=0)
-    xt = initial_x
-    print("xt shape:")
-    print(xt.shape)
-    score = task.predict(xt)
-    print(xt)
-    print(score)
-    solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy()
-    solution = tf.reshape(solution, [solution.shape[0], solution.shape[2]])
-    print("solution:")
-    print(solution)
-    print("solution shape:")
-    print(solution.shape)
-    prediction = task.predict(solution) 
+    xt = initial_x  # (128, 60)
+    # score = task.predict(xt)
+    if task.is_discrete:
+        print("evaluation to be implemented")
+    else:
+        solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy() # (128,1,60)
+    # solution = tf.reshape(solution, [solution.shape[0], solution.shape[2]])
+    # prediction = task.predict(solution) 
 
     if normalize_ys:
         score = task.denormalize_y(score)
