@@ -106,17 +106,17 @@ class RepresentationLearningModel(tf.Module):
                 uniform_vec = [1./self.num_classes] * self.num_classes
                 draw_samples = tf.reshape(tf.random.categorical(tf.math.log([uniform_vec]), self.new_sample_size * input_shape), (self.new_sample_size, input_shape))
                 learned_x = tf.one_hot(draw_samples, depth=self.num_classes) # (32,8,4)
-                densities = self.policy_model.get_density(learned_x, training=False) #(32,1)
-                rep_learnedx = self.rep_model(learned_x, training=True)
-                d_pos_learned = tf.transpose(self.forward_model(rep_learnedx, training=True)) 
+                densities = self.policy_model.get_density(learned_x, training=True) #(32,1)
+                rep_learnedx = self.rep_model(learned_x, training=False)
+                d_pos_learned = tf.transpose(self.forward_model(rep_learnedx, training=False)) 
                 rewards = tf.tensordot(d_pos_learned, densities, axes=1)
             else:
                 # Policy Reward
                 input_shape = x.shape[1:][0]
-                learned_x = self.policy_model.get_sample(size=self.new_sample_size, training=False)
+                learned_x = self.policy_model.get_sample(size=self.new_sample_size, training=True)
                 learned_x = tf.reshape(learned_x, (self.new_sample_size, input_shape))
-                rep_learnedx = self.rep_model(learned_x, training=True)
-                d_pos_learned = self.forward_model(rep_learnedx, training=True)
+                rep_learnedx = self.rep_model(learned_x, training=False)
+                d_pos_learned = self.forward_model(rep_learnedx, training=False)
                 rewards = tf.reduce_mean(d_pos_learned)
 
             statistics[f'train/rewards'] = rewards
