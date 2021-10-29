@@ -11,6 +11,7 @@ import numpy as np
 import os
 import click
 import json
+from sklearn.utils import shuffle
 
 
 def rep(
@@ -131,7 +132,8 @@ def rep(
     noise_input = noise_shape
     if task.is_discrete:
         input_shape = (input_shape[0], task.num_classes)
-
+    """
+    #one round
     # make a neural network to predict scores
     rep_model = RepModel(
         input_shape, output_shape, activations=rep_model_activations,
@@ -174,17 +176,20 @@ def rep(
     initial_x = tf.gather(x, indices, axis=0)
     initial_y = tf.gather(y, indices, axis=0)
     xt = initial_x  # (128, 60)
-    # score = task.predict(xt)
+    score = task.predict(xt)
     if task.is_discrete:
         print("evaluation to be implemented")
     else:
         solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy() # (128,1,60)
-    # solution = tf.reshape(solution, [solution.shape[0], solution.shape[2]])
-    # prediction = task.predict(solution) 
+    solution = tf.reshape(solution, [solution.shape[0], solution.shape[2]])
+    prediction = task.predict(solution) 
 
     if normalize_ys:
         score = task.denormalize_y(score)
         prediction = task.denormalize_y(prediction)
+    print("results")
+    print(score)
+    print(prediction)
 
     # record the prediction and score to the logger
     step = 0
@@ -195,3 +200,77 @@ def rep(
                     prediction, step)
     logger.record(f"solver/overestimation",
                     prediction - score, step)
+
+    """
+    #cross-validation
+    x, y = shuffle(x, y)
+    print(x.shape)
+    print(y.shape)
+    val_size = int(len(x)/5)
+    for i in range(5):
+        print("round" + str(i))
+        x = np.concatenate((x[val_size:], x[:val_size]), axis = 0)
+        y = np.concatenate((y[val_size:], y[:val_size]), axis = 0)
+
+        train_data, validate_data = build_pipeline(
+            x=x, y=y, batch_size=forward_model_batch_size,
+            val_size=val_size)
+
+        rep_model = RepModel(
+        input_shape, output_shape, activations=rep_model_activations,
+        hidden_size=rep_model_hidden_size,
+        final_tanh=rep_model_final_tanh)
+
+        forward_model = ForwardModel(
+            output_shape, activations=forward_model_activations,
+            hidden_size=forward_model_hidden_size,
+            final_tanh=forward_model_final_tanh)
+
+        if task.is_discrete:
+            policy_model = PolicyDiscreteForwardModel(task, input_shape) 
+        else: 
+            policy_model = PolicyContinuousForwardModel(noise_input, task) 
+        
+        trainer = RepresentationLearningModel(task,
+        rep_model, forward_model, policy_model,
+        forward_model_opt=tf.keras.optimizers.Adam,
+        forward_model_lr=forward_model_lr,
+        rep_model_opt=tf.keras.optimizers.Adam,
+        rep_model_lr=forward_model_lr, 
+        policy_model_opt=tf.keras.optimizers.Adam,
+        policy_model_lr=forward_model_lr)
+
+        trainer.launch(train_data, validate_data,
+                   logger, forward_model_epochs)
+
+        print("start evaluation")
+        indices = tf.math.top_k(y[:, 0], k=evaluation_samples)[1]
+        initial_x = tf.gather(x, indices, axis=0)
+        initial_y = tf.gather(y, indices, axis=0)
+        xt = initial_x  # (128, 60)
+        score = task.predict(xt)
+        if task.is_discrete:
+            print("evaluation to be implemented")
+        else:
+            solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy() # (128,1,60)
+        solution = tf.reshape(solution, [solution.shape[0], solution.shape[2]])
+        prediction = task.predict(solution) 
+
+        if normalize_ys:
+            score = task.denormalize_y(score)
+            prediction = task.denormalize_y(prediction)
+        print("results")
+        print(score)
+        print(prediction)
+
+        # record the prediction and score to the logger
+        step = 0
+        logger.record(f"score", score, step, percentile=True)
+        logger.record(f"solver/model_to_real",
+                        spearman(prediction[:, 0], score[:, 0]), step)
+        logger.record(f"solver/prediction",
+                        prediction, step)
+        logger.record(f"solver/overestimation",
+                        prediction - score, step)
+
+

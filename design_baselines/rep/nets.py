@@ -77,7 +77,7 @@ class PolicyContinuousForwardModel(tf.keras.Sequential):
 
 
     def __init__(self, input_shape, task, latent_size=20, embedding_size=50, hidden_size=10,
-                 num_layers=1, initial_max_std=1.5, initial_min_std=0.5):
+                 num_layers=2, initial_max_std=1.5, initial_min_std=0.5):
         """Create a fully connected architecture using keras that can process
         several parallel streams of weights and biases
 
