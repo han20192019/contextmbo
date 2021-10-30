@@ -132,7 +132,7 @@ def rep(
     noise_input = noise_shape
     if task.is_discrete:
         input_shape = (input_shape[0], task.num_classes)
-    """
+    
     #one round
     # make a neural network to predict scores
     rep_model = RepModel(
@@ -200,6 +200,8 @@ def rep(
                     prediction, step)
     logger.record(f"solver/overestimation",
                     prediction - score, step)
+
+    
 
     """
     #cross-validation
@@ -272,5 +274,6 @@ def rep(
                         prediction, step)
         logger.record(f"solver/overestimation",
                         prediction - score, step)
+    """
 
 

@@ -218,6 +218,56 @@ class RepresentationLearningModel(tf.Module):
         statistics[f'validate/rank_corr'] = rank_corr
         return statistics
 
+    def validate_pi(self, dataset):
+        """Perform validation on an ensemble of models without
+        using bootstrapping weights
+        Args:
+        dataset: tf.data.Dataset
+            the validation dataset already batched and prefetched
+        Returns:
+        loss_dict: dict
+            a dictionary mapping names to loss values for logging
+        """
+
+        statistics = defaultdict(list)
+        for x, y in dataset:
+            for name, tensor in self.validate_step_pi(x, y).items():
+                statistics[name].append(tensor)
+        for name in statistics.keys():
+            statistics[name] = tf.concat(statistics[name], axis=0)
+        return statistics
+
+    def validate_step_pi(self, x, y):
+        """Perform a validation step on an ensemble of models
+        without using bootstrapping weights
+        Args:
+        x: tf.Tensor
+            a batch of validation inputs shaped like [batch_size, channels]
+        y: tf.Tensor
+            a batch of validation labels shaped like [batch_size, 1]
+        Returns:
+        statistics: dict
+            a dictionary that contains logging information
+        """
+
+        #only implement for continous task
+        statistics = dict()
+
+        # calculate the prediction error and accuracy of the model
+        learned_x = self.policy_model.get_sample(size=self.new_sample_size, training=False)
+        learned_mean = tf.reduce_mean(learned_x)
+        learned_std = tf.math.reduce_std(learned_x)
+
+        ori_mean = tf.reduce_mean(x)
+        ori_std = tf.math.reduce_std(x)
+
+        mse_mean = (learned_mean - ori_mean)*(learned_mean - ori_mean)
+        mse_std = (learned_std - ori_std)*(learned_mean - ori_mean)
+
+        statistics[f'validate_pi/mse_mean'] = mse_mean
+        statistics[f'validate_pi/mse_std'] = mse_std
+        return statistics
+
 
     def launch(self, train_data, validate_data, logger, epochs):
         """Launch training and validation for the model for the specified
@@ -241,5 +291,8 @@ class RepresentationLearningModel(tf.Module):
             
             for name, loss in self.validate_fphi(validate_data).items():
                 logger.record(name, loss, e)
+            for name, loss in self.validate_pi(validate_data).items():
+                logger.record(name, loss, e)
+            
 
         
