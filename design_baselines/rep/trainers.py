@@ -81,6 +81,9 @@ class RepresentationLearningModel(tf.Module):
             loss1 = -self.reward_alpha * rewards + self.L2_alpha * mse
             loss2 = self.reward_alpha * rewards + self.L2_alpha * mse
 
+            print("mse:")
+            print(mse)
+
         # calculate gradients using the model
         phi_grads = tape.gradient(loss1, self.rep_model.trainable_variables)
         f_grads = tape.gradient(loss2, self.forward_model.trainable_variables)

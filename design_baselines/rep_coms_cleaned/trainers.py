@@ -8,7 +8,7 @@ import numpy as np
 
 class ConservativeObjectiveModel(tf.Module):
 
-    def __init__(self, forward_model,
+    def __init__(self, rep_model, rep_model_lr, forward_model,rep_model_opt=tf.keras.optimizers.Adam,
                  forward_model_opt=tf.keras.optimizers.Adam,
                  forward_model_lr=0.001, alpha=1.0,
                  alpha_opt=tf.keras.optimizers.Adam,
@@ -56,9 +56,13 @@ class ConservativeObjectiveModel(tf.Module):
         """
 
         super().__init__()
+        self.rep_model = rep_model
+        self.rep_model_lr = rep_model_lr
         self.forward_model = forward_model
         self.forward_model_opt = \
             forward_model_opt(learning_rate=forward_model_lr)
+        self.rep_model_opt = \
+            rep_model_opt(learning_rate=rep_model_lr)
 
         # lagrangian dual descent variables
         self.log_alpha = tf.Variable(np.log(alpha).astype(np.float32))
@@ -106,7 +110,8 @@ class ConservativeObjectiveModel(tf.Module):
                 entropy = tf.reduce_mean((xt - shuffled_xt) ** 2)
 
                 # the predicted score according to the forward model
-                score = self.forward_model(xt, **kwargs)
+                xt_rep = self.rep_model(xt, training = False)
+                score = self.forward_model(xt_rep, **kwargs)
 
                 # the conservatism of the current set of particles
                 loss = self.entropy_coefficient * entropy + score
@@ -145,12 +150,13 @@ class ConservativeObjectiveModel(tf.Module):
         with tf.GradientTape(persistent=True) as tape:
 
             # calculate the prediction error and accuracy of the model
-            d_pos = self.forward_model(x, training=True)
-            mse = tf.keras.losses.mean_squared_error(y, d_pos)
+            rep_x = self.rep_model(x, training= True)
+            d_pos_rep = self.forward_model(rep_x, training=True)
+            mse = tf.keras.losses.mean_squared_error(y, d_pos_rep)
             statistics[f'train/mse'] = mse
 
             # evaluate how correct the rank fo the model predictions are
-            rank_corr = spearman(y[:, 0], d_pos[:, 0])
+            rank_corr = spearman(y[:, 0], d_pos_rep[:, 0])
             statistics[f'train/rank_corr'] = rank_corr
 
             # calculate negative samples starting from the dataset
@@ -158,8 +164,9 @@ class ConservativeObjectiveModel(tf.Module):
                 x, self.particle_gradient_steps, training=False)
 
             # calculate the prediction error and accuracy of the model
-            d_neg = self.forward_model(x_neg, training=False)
-            overestimation = d_neg[:, 0] - d_pos[:, 0]
+            rep_x_neg = self.rep_model(x_neg, training= False)
+            d_neg_rep = self.forward_model(rep_x_neg, training=False)
+            overestimation = d_neg_rep[:, 0] - d_pos_rep[:, 0]
             statistics[f'train/overestimation'] = overestimation
 
             # build a lagrangian for dual descent
@@ -176,11 +183,15 @@ class ConservativeObjectiveModel(tf.Module):
         alpha_grads = tape.gradient(alpha_loss, self.log_alpha)
         model_grads = tape.gradient(
             total_loss, self.forward_model.trainable_variables)
+        rep_grads = tape.gradient(
+            total_loss, self.rep_model.trainable_variables)
 
         # take gradient steps on the model
         self.alpha_opt.apply_gradients([[alpha_grads, self.log_alpha]])
         self.forward_model_opt.apply_gradients(zip(
             model_grads, self.forward_model.trainable_variables))
+        self.rep_model_opt.apply_gradients(zip(
+            rep_grads, self.rep_model.trainable_variables))
 
         return statistics
 
@@ -240,10 +251,11 @@ class ConservativeObjectiveModel(tf.Module):
 
         statistics = defaultdict(list)
         for x, y in dataset:
-            for name, tensor in self.train_step(x, y).items():
-                statistics[name].append(tensor)
+            self.train_step(x, y)
+        """
         for name in statistics.keys():
             statistics[name] = tf.concat(statistics[name], axis=0)
+        """
         return statistics
 
     def validate(self, dataset):
@@ -286,10 +298,13 @@ class ConservativeObjectiveModel(tf.Module):
         """
 
         for e in range(epochs):
+            print(e)
             for name, loss in self.train(train_data).items():
                 logger.record(name, loss, e)
+            """
             for name, loss in self.validate(validate_data).items():
                 logger.record(name, loss, e)
+            """
 
 
 class VAETrainer(tf.Module):
@@ -414,10 +429,11 @@ class VAETrainer(tf.Module):
 
         statistics = defaultdict(list)
         for x, y in dataset:
-            for name, tensor in self.train_step(x).items():
-                statistics[name].append(tensor)
+            self.train_step(x)
+        """
         for name in statistics.keys():
             statistics[name] = tf.concat(statistics[name], axis=0)
+        """
         return statistics
 
     def validate(self,
@@ -463,8 +479,8 @@ class VAETrainer(tf.Module):
         epochs: int
             the number of epochs through the data sets to take
         """
-
         for e in range(epochs):
+            print(e)
             for name, loss in self.train(train_data).items():
                 logger.record(name, loss, e)
             for name, loss in self.validate(validate_data).items():

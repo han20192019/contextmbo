@@ -164,6 +164,8 @@ def rep(
     train_data, validate_data = build_pipeline(
         x=x, y=y, batch_size=forward_model_batch_size,
         val_size=forward_model_val_size)
+    print("train data shape:")
+    print(x.shape)
 
     # train the forward model
     trainer.launch(train_data, validate_data,

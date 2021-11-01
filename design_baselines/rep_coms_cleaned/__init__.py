@@ -1,17 +1,18 @@
 from design_baselines.data import StaticGraphTask, build_pipeline
 from design_baselines.logger import Logger
 from design_baselines.utils import spearman
-from design_baselines.coms_cleaned.trainers import ConservativeObjectiveModel
-from design_baselines.coms_cleaned.trainers import VAETrainer
-from design_baselines.coms_cleaned.nets import ForwardModel
-from design_baselines.coms_cleaned.nets import SequentialVAE
+from design_baselines.rep_coms_cleaned.trainers import ConservativeObjectiveModel
+from design_baselines.rep_coms_cleaned.trainers import VAETrainer
+from design_baselines.rep_coms_cleaned.nets import ForwardModel
+from design_baselines.rep_coms_cleaned.nets import RepModel
+from design_baselines.rep_coms_cleaned.nets import SequentialVAE
 import tensorflow as tf
 import numpy as np
 import os
 import click
 import json
 
-
+"""
 @click.command()
 @click.option('--logging-dir',
               default='coms-cleaned',
@@ -133,6 +134,7 @@ import json
 @click.option('--fast/--not-fast',
               default=True,
               help='Whether to run experiment quickly and only log once.')
+"""
 def coms_cleaned(
         logging_dir,
         task,
@@ -166,7 +168,11 @@ def coms_cleaned(
         forward_model_val_size,
         forward_model_epochs,
         evaluation_samples,
-        fast):
+        fast,
+        latent_space_size,
+        rep_model_activations,
+        rep_model_lr,
+        rep_model_hidden_size):
     """Solve a Model-Based Optimization problem using the method:
     Conservative Objective Models (COMs).
 
@@ -229,48 +235,32 @@ def coms_cleaned(
 
     x = task.x
     y = task.y
-
-    if task.is_discrete and in_latent_space:
-
-        vae_model = SequentialVAE(
-            task, hidden_size=vae_hidden_size,
-            latent_size=vae_latent_size, activation=vae_activation,
-            kernel_size=vae_kernel_size, num_blocks=vae_num_blocks)
-
-        vae_trainer = VAETrainer(
-            vae_model, optim=tf.keras.optimizers.Adam,
-            lr=vae_lr, beta=vae_beta)
-
-        # create the training task and logger
-        train_data, val_data = build_pipeline(
-            x=x, y=y, batch_size=vae_batch_size,
-            val_size=vae_val_size)
-
-        # estimate the number of training steps per epoch
-        vae_trainer.launch(train_data, val_data,
-                           logger, vae_epochs)
-
-        # map the x values to latent space
-        x = vae_model.encoder_cnn.predict(x)[0]
-
-        mean = np.mean(x, axis=0, keepdims=True)
-        standard_dev = np.std(x - mean, axis=0, keepdims=True)
-        x = (x - mean) / standard_dev
+    print(task.is_discrete)
 
     input_shape = x.shape[1:]
+    print("input_shape:")
+    print(input_shape)
+
+    output_shape = latent_space_size
+    
+    # make a neural network to predict scores
+    rep_model_final_tanh = False
+    rep_model = RepModel(
+        input_shape, output_shape, activations=rep_model_activations,
+        hidden_size=rep_model_hidden_size,
+        final_tanh=rep_model_final_tanh)
+
+    forward_model = ForwardModel(
+        output_shape, activations=forward_model_activations,
+        hidden_size=forward_model_hidden_size,
+        final_tanh=forward_model_final_tanh)
 
     # compute the normalized learning rate of the model
     particle_lr = particle_lr * np.sqrt(np.prod(input_shape))
 
-    # make a neural network to predict scores
-    forward_model = ForwardModel(
-        input_shape, activations=forward_model_activations,
-        hidden_size=forward_model_hidden_size,
-        final_tanh=forward_model_final_tanh)
-
     # make a trainer for the forward model
-    trainer = ConservativeObjectiveModel(
-        forward_model, forward_model_opt=tf.keras.optimizers.Adam,
+    trainer = ConservativeObjectiveModel(rep_model=rep_model, rep_model_lr=rep_model_lr,
+        forward_model=forward_model, forward_model_opt=tf.keras.optimizers.Adam,
         forward_model_lr=forward_model_lr, alpha=forward_model_alpha,
         alpha_opt=tf.keras.optimizers.Adam, alpha_lr=forward_model_alpha_lr,
         overestimation_limit=forward_model_overestimation_limit,
@@ -293,6 +283,10 @@ def coms_cleaned(
     initial_y = tf.gather(y, indices, axis=0)
     xt = initial_x
 
+    print("ground truth y:")
+    for i in y[:128]:
+        print(i)
+
     if not fast:
 
         scores = []
@@ -305,6 +299,8 @@ def coms_cleaned(
             solution = tf.argmax(logits, axis=2, output_type=tf.int32)
 
         score = task.predict(solution)
+        print("score")
+        print(score)
 
         if normalize_ys:
             initial_y = task.denormalize_y(initial_y)
@@ -313,6 +309,7 @@ def coms_cleaned(
         logger.record(f"dataset_score", initial_y, 0, percentile=True)
         logger.record(f"score", score, 0, percentile=True)
 
+    """
     for step in range(1, 1 + particle_evaluate_gradient_steps):
 
         # update the set of solution particles
@@ -363,6 +360,7 @@ def coms_cleaned(
                     np.concatenate(scores, axis=1))
             np.save(os.path.join(logging_dir, "predictions.npy"),
                     np.stack(predictions, axis=1))
+    """
 
 
 # run COMs using the command line interface

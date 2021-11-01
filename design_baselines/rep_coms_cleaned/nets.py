@@ -51,6 +51,22 @@ def ForwardModel(input_shape,
         layers.extend([TanhMultiplier()])
     return tf.keras.Sequential(layers)
 
+def RepModel(input_shape,
+                output_shape,
+                activations=('relu', 'relu'),
+                hidden_size=2048,
+                final_tanh=False):
+    activations = [tfkl.LeakyReLU if act == 'leaky_relu' else
+                   act for act in activations]
+
+    layers = [tfkl.Flatten(input_shape=input_shape)]
+    for act in activations:
+        layers.extend([tfkl.Dense(hidden_size), tfkl.Activation(act)
+                       if isinstance(act, str) else act()])
+    layers.extend([tfkl.Dense(np.prod(output_shape))])
+    # if final_tanh:
+    #     layers.extend([TanhMultiplier()])
+    return tf.keras.Sequential(layers)
 
 class SequentialVAE(tf.keras.Model):
 
