@@ -31,13 +31,15 @@ coms_cleaned(logging_dir = "data",
                         forward_model_noise_std=0.0,
                         forward_model_batch_size=128,
                         forward_model_val_size=200,
-                        forward_model_epochs=3,
+                        forward_model_epochs=1,
                         evaluation_samples=128,
                         fast=False,
                         latent_space_size=[20,1],
                         rep_model_activations=['relu', 'relu'],
                         rep_model_lr=0.0003,
-                        rep_model_hidden_size=2048
+                        rep_model_hidden_size=2048,
+                        policy_model_lr=0.0003,
+                        noise_input = [1, 10]
 )
 
 """

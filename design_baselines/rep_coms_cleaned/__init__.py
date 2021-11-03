@@ -6,6 +6,7 @@ from design_baselines.rep_coms_cleaned.trainers import VAETrainer
 from design_baselines.rep_coms_cleaned.nets import ForwardModel
 from design_baselines.rep_coms_cleaned.nets import RepModel
 from design_baselines.rep_coms_cleaned.nets import SequentialVAE
+from design_baselines.rep_coms_cleaned.nets import PolicyContinuousForwardModel
 import tensorflow as tf
 import numpy as np
 import os
@@ -172,7 +173,9 @@ def coms_cleaned(
         latent_space_size,
         rep_model_activations,
         rep_model_lr,
-        rep_model_hidden_size):
+        rep_model_hidden_size,
+        noise_input,
+        policy_model_lr):
     """Solve a Model-Based Optimization problem using the method:
     Conservative Objective Models (COMs).
 
@@ -254,12 +257,16 @@ def coms_cleaned(
         output_shape, activations=forward_model_activations,
         hidden_size=forward_model_hidden_size,
         final_tanh=forward_model_final_tanh)
+    
+    policy_model = PolicyContinuousForwardModel(noise_input, task) 
 
     # compute the normalized learning rate of the model
     particle_lr = particle_lr * np.sqrt(np.prod(input_shape))
 
     # make a trainer for the forward model
-    trainer = ConservativeObjectiveModel(rep_model=rep_model, rep_model_lr=rep_model_lr,
+    trainer = ConservativeObjectiveModel(policy_model = policy_model, 
+        policy_model_lr = policy_model_lr, rep_model=rep_model, 
+        rep_model_lr=rep_model_lr,
         forward_model=forward_model, forward_model_opt=tf.keras.optimizers.Adam,
         forward_model_lr=forward_model_lr, alpha=forward_model_alpha,
         alpha_opt=tf.keras.optimizers.Adam, alpha_lr=forward_model_alpha_lr,
@@ -283,10 +290,6 @@ def coms_cleaned(
     initial_y = tf.gather(y, indices, axis=0)
     xt = initial_x
 
-    print("ground truth y:")
-    for i in y[:128]:
-        print(i)
-
     if not fast:
 
         scores = []
@@ -299,7 +302,7 @@ def coms_cleaned(
             solution = tf.argmax(logits, axis=2, output_type=tf.int32)
 
         score = task.predict(solution)
-        print("score")
+        print("given score")
         print(score)
 
         if normalize_ys:
@@ -308,6 +311,23 @@ def coms_cleaned(
 
         logger.record(f"dataset_score", initial_y, 0, percentile=True)
         logger.record(f"score", score, 0, percentile=True)
+    
+        xt = trainer.optimize(xt, 1, training=False)
+        solution = xt
+        score = task.predict(solution)
+        print("predicted score")
+        print(score)
+
+        policy_model_solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy()
+        print(policy_model_solution.shape)
+        policy_model_solution = tf.reshape(policy_model_solution, [policy_model_solution.shape[0], policy_model_solution.shape[2]])
+        score_policy_model_solution = task.predict(policy_model_solution)
+        print("policy model")
+        print(score_policy_model_solution)
+
+
+
+
 
     """
     for step in range(1, 1 + particle_evaluate_gradient_steps):

@@ -8,7 +8,9 @@ import numpy as np
 
 class ConservativeObjectiveModel(tf.Module):
 
-    def __init__(self, rep_model, rep_model_lr, forward_model,rep_model_opt=tf.keras.optimizers.Adam,
+    def __init__(self, policy_model, policy_model_lr, rep_model, rep_model_lr, 
+                 forward_model, policy_model_opt=tf.keras.optimizers.Adam, 
+                 rep_model_opt=tf.keras.optimizers.Adam,
                  forward_model_opt=tf.keras.optimizers.Adam,
                  forward_model_lr=0.001, alpha=1.0,
                  alpha_opt=tf.keras.optimizers.Adam,
@@ -56,6 +58,7 @@ class ConservativeObjectiveModel(tf.Module):
         """
 
         super().__init__()
+        self.policy_model = policy_model
         self.rep_model = rep_model
         self.rep_model_lr = rep_model_lr
         self.forward_model = forward_model
@@ -63,6 +66,8 @@ class ConservativeObjectiveModel(tf.Module):
             forward_model_opt(learning_rate=forward_model_lr)
         self.rep_model_opt = \
             rep_model_opt(learning_rate=rep_model_lr)
+        self.policy_model_opt = \
+            policy_model_opt(learning_rate=policy_model_lr)
 
         # lagrangian dual descent variables
         self.log_alpha = tf.Variable(np.log(alpha).astype(np.float32))
@@ -75,6 +80,8 @@ class ConservativeObjectiveModel(tf.Module):
         self.particle_gradient_steps = particle_gradient_steps
         self.entropy_coefficient = entropy_coefficient
         self.noise_std = noise_std
+
+        self.new_sample_size = 32 
 
     @tf.function(experimental_relax_shapes=True)
     def optimize(self, x, steps, **kwargs):
@@ -194,6 +201,33 @@ class ConservativeObjectiveModel(tf.Module):
             rep_grads, self.rep_model.trainable_variables))
 
         return statistics
+    
+    # @tf.function(experimental_relax_shapes=True)
+    def train_step_pi(self, x):
+        statistics = dict()
+        with tf.GradientTape(persistent=True) as tape:
+
+            repx = self.rep_model(x, training=False)
+            d_pos = self.forward_model(repx, training=False)
+
+            # Policy Reward
+            input_shape = x.shape[1:][0]
+            learned_x = self.policy_model.get_sample(size=self.new_sample_size, training=True)
+            learned_x = tf.reshape(learned_x, (self.new_sample_size, input_shape))
+            rep_learnedx = self.rep_model(learned_x, training=False)
+            d_pos_learned = self.forward_model(rep_learnedx, training=False)
+            rewards = tf.reduce_mean(d_pos_learned)
+
+            statistics[f'train/rewards'] = rewards
+            loss = -rewards
+
+
+        # calculate gradients using the model
+        pi_grads = tape.gradient(loss, self.policy_model.trainable_variables)
+        self.policy_model_opt.apply_gradients(zip(
+            pi_grads, self.policy_model.trainable_variables))
+        
+        return statistics
 
     @tf.function(experimental_relax_shapes=True)
     def validate_step(self, x, y):
@@ -257,6 +291,25 @@ class ConservativeObjectiveModel(tf.Module):
             statistics[name] = tf.concat(statistics[name], axis=0)
         """
         return statistics
+    
+    def train_pi(self, dataset):
+        """Perform training using gradient descent on an ensemble
+        using bootstrap weights for each model in the ensemble
+        Args:
+        dataset: tf.data.Dataset
+            the training dataset already batched and prefetched
+        Returns:
+        loss_dict: dict
+            a dictionary mapping names to loss values for logging
+        """
+
+        statistics = defaultdict(list)
+        for x, y in dataset:
+            for name, tensor in self.train_step_pi(x).items():
+                statistics[name].append(tensor)
+        for name in statistics.keys():
+            statistics[name] = tf.concat(statistics[name], axis=0)
+        return statistics
 
     def validate(self, dataset):
         """Perform validation on an ensemble of models without
@@ -300,6 +353,8 @@ class ConservativeObjectiveModel(tf.Module):
         for e in range(epochs):
             print(e)
             for name, loss in self.train(train_data).items():
+                logger.record(name, loss, e)
+            for name, loss in self.train_pi(train_data).items():
                 logger.record(name, loss, e)
             """
             for name, loss in self.validate(validate_data).items():
