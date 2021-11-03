@@ -2,7 +2,7 @@ from design_baselines.cbas import cbas
 from design_baselines.rep import rep
 from design_baselines.rep_coms_cleaned import coms_cleaned
 coms_cleaned(logging_dir = "data",
-                        task='HopperController-Exact-v0', #'AntMorphology-Exact-v0', #Discrete: TFBind8-Exact-v0
+                        task='HopperController-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #Discrete: TFBind8-Exact-v0
                         task_relabel=True,
                         normalize_ys=True,
                         normalize_xs=True,
@@ -31,7 +31,7 @@ coms_cleaned(logging_dir = "data",
                         forward_model_noise_std=0.0,
                         forward_model_batch_size=128,
                         forward_model_val_size=200,
-                        forward_model_epochs=1,
+                        forward_model_epochs=10,
                         evaluation_samples=128,
                         fast=False,
                         latent_space_size=[20,1],

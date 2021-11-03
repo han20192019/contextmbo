@@ -220,6 +220,11 @@ class ConservativeObjectiveModel(tf.Module):
 
             statistics[f'train/rewards'] = rewards
             loss = -rewards
+            
+            distribution = self.policy_model.get_distribution(training=False)
+            statistics[f'train/distribution_mean'] = distribution.mean()
+            statistics[f'train/distribution_std'] = distribution.stddev()
+
 
 
         # calculate gradients using the model
