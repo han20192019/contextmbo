@@ -325,6 +325,24 @@ def coms_cleaned(
         print("policy model")
         print(score_policy_model_solution)
 
+        print("f(phi(x))")
+        r1 = rep_model(initial_x, training=False)
+        f1 = forward_model(r1, training=False)
+        print("reward for given x")
+        print(f1)
+
+        r2 = rep_model(xt, training=False)
+        f2 = forward_model(r2, training=False)
+        print("reward for optimized x")
+        print(f2)
+
+        r3 = rep_model(policy_model_solution, training=False)
+        f3 = forward_model(r3, training=False)
+        print("reward for policy generated x")
+        print(f3)
+
+
+
 
 
 

@@ -81,7 +81,7 @@ class ConservativeObjectiveModel(tf.Module):
         self.entropy_coefficient = entropy_coefficient
         self.noise_std = noise_std
 
-        self.new_sample_size = 32 
+        self.new_sample_size = 128 
 
     @tf.function(experimental_relax_shapes=True)
     def optimize(self, x, steps, **kwargs):
@@ -200,6 +200,17 @@ class ConservativeObjectiveModel(tf.Module):
         self.rep_model_opt.apply_gradients(zip(
             rep_grads, self.rep_model.trainable_variables))
 
+        #for debug
+        input_shape = x.shape[1:][0]
+        learned_x = self.policy_model.get_sample(size=self.new_sample_size, training=False)
+        learned_x = tf.reshape(learned_x, (self.new_sample_size, input_shape))
+        rep_learnedx = self.rep_model(learned_x, training=False)
+        d_pos_learned = self.forward_model(rep_learnedx, training=False)
+        rewards_policy_samples = tf.reduce_mean(d_pos_learned)
+        statistics[f'train_fphi/rewards_policy_samples'] = rewards_policy_samples
+
+
+
         return statistics
     
     # @tf.function(experimental_relax_shapes=True)
@@ -290,12 +301,21 @@ class ConservativeObjectiveModel(tf.Module):
 
         statistics = defaultdict(list)
         for x, y in dataset:
-            self.train_step(x, y)
-        """
+            for name, tensor in self.train_step(x, y).items():
+                statistics[name].append(tensor)
         for name in statistics.keys():
             statistics[name] = tf.concat(statistics[name], axis=0)
-        """
         return statistics
+        """
+        statistics = defaultdict(list)
+        for x, y in dataset:
+            self.train_step(x, y)
+        
+        for name in statistics.keys():
+            statistics[name] = tf.concat(statistics[name], axis=0)
+        
+        return statistics
+        """
     
     def train_pi(self, dataset):
         """Perform training using gradient descent on an ensemble
