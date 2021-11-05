@@ -181,10 +181,17 @@ class ConservativeObjectiveModel(tf.Module):
                           self.alpha * overestimation)
             statistics[f'train/alpha'] = self.alpha
 
+            #calculate mmd loss(new added)
+            logged_rep = tf.reduce_mean(rep_x, axis=0)
+            #here use d_neg_rep????
+            learned_rep = tf.reduce_mean(d_neg_rep, axis=0)
+            mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
+
             # loss that combines maximum likelihood with a constraint
-            model_loss = mse + self.alpha * overestimation
+            model_loss = mse + self.alpha * overestimation + mmd
             total_loss = tf.reduce_mean(model_loss)
             alpha_loss = tf.reduce_mean(alpha_loss)
+
 
         # calculate gradients using the model
         alpha_grads = tape.gradient(alpha_loss, self.log_alpha)
