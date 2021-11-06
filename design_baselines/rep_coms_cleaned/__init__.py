@@ -290,115 +290,72 @@ def coms_cleaned(
     initial_y = tf.gather(y, indices, axis=0)
     xt = initial_x
 
-    if not fast:
 
-        scores = []
-        predictions = []
+    scores = []
+    predictions = []
 
-        solution = xt
-        if task.is_discrete and in_latent_space:
-            solution = solution * standard_dev + mean
-            logits = vae_model.decoder_cnn.predict(solution)
-            solution = tf.argmax(logits, axis=2, output_type=tf.int32)
+    solution = xt
 
-        score = task.predict(solution)
-        print("given score")
-        print(score)
+    score = task.predict(solution)
 
-        if normalize_ys:
-            initial_y = task.denormalize_y(initial_y)
-            score = task.denormalize_y(score)
+    if normalize_ys:
+        initial_y = task.denormalize_y(initial_y)
+        score = task.denormalize_y(score)
 
-        logger.record(f"dataset_score", initial_y, 0, percentile=True)
-        logger.record(f"score", score, 0, percentile=True)
-    
-        xt = trainer.optimize(xt, 1, training=False)
-        solution = xt
-        score = task.predict(solution)
-        print("predicted score")
-        print(score)
+    logger.record(f"dataset_score", initial_y, 0, percentile=True)
+    logger.record(f"score", score, 0, percentile=True)
 
-        policy_model_solution = policy_model.get_sample(size=evaluation_samples, training=False).numpy()
-        print(policy_model_solution.shape)
-        policy_model_solution = tf.reshape(policy_model_solution, [policy_model_solution.shape[0], policy_model_solution.shape[2]])
-        score_policy_model_solution = task.predict(policy_model_solution)
-        print("policy model")
-        print(score_policy_model_solution)
+    xt_ori = trainer.optimize(xt, 1, training=False)
+    xt_ori_rep = rep_model(xt_ori, training = False)
+    prediction_ori = forward_model(xt_ori_rep, training=False).numpy()
 
-        print("f(phi(x))")
-        r1 = rep_model(initial_x, training=False)
-        f1 = forward_model(r1, training=False)
-        print("reward for given x")
-        print(f1)
-
-        r2 = rep_model(xt, training=False)
-        f2 = forward_model(r2, training=False)
-        print("reward for optimized x")
-        print(f2)
-
-        r3 = rep_model(policy_model_solution, training=False)
-        f3 = forward_model(r3, training=False)
-        print("reward for policy generated x")
-        print(f3)
-
-
-
-
-
-
-
-    """
-    for step in range(1, 1 + particle_evaluate_gradient_steps):
+    for step in range(0, 1 + particle_evaluate_gradient_steps):
 
         # update the set of solution particles
         xt = trainer.optimize(xt, 1, training=False)
         final_xt = trainer.optimize(
             xt, particle_train_gradient_steps, training=False)
 
-        if not fast or step == particle_evaluate_gradient_steps:
+        
+        solution = final_xt
 
-            solution = xt
-            if task.is_discrete and in_latent_space:
-                solution = solution * standard_dev + mean
-                logits = vae_model.decoder_cnn.predict(solution)
-                solution = tf.argmax(logits, axis=2, output_type=tf.int32)
+        np.save(os.path.join(logging_dir, "solution.npy"), solution)
 
-            np.save(os.path.join(logging_dir, "solution.npy"), solution)
+        # evaluate the solutions found by the model
+        score = task.predict(solution)
+        xt_rep = rep_model(xt, training = False)
+        prediction = forward_model(xt_rep, training=False).numpy()
+        print(step)
+        mean_score = tf.reduce_mean(score)
+        print(mean_score)
 
-            # evaluate the solutions found by the model
-            score = task.predict(solution)
-            prediction = forward_model(xt, training=False).numpy()
-            final_prediction = forward_model(final_xt, training=False).numpy()
+        if normalize_ys:
+            score = task.denormalize_y(score)
+            prediction = task.denormalize_y(prediction)
 
-            if normalize_ys:
-                score = task.denormalize_y(score)
-                prediction = task.denormalize_y(prediction)
-                final_prediction = task.denormalize_y(final_prediction)
+        # record the prediction and score to the logger
+        logger.record(f"score/score", score, step, percentile=True)
+        logger.record(f"score/score_mean", mean_score, step, percentile=True)
+        logger.record(f"solver/model_to_real",
+                        spearman(prediction[:, 0], score[:, 0]), step)
+        logger.record(f"solver/distance",
+                        tf.linalg.norm(xt - initial_x), step)
+        logger.record(f"solver/prediction",
+                        prediction, step)
+        logger.record(f"solver/model_overestimation",
+                        prediction_ori - prediction, step)
+        logger.record(f"solver/overestimation",
+                        prediction - score, step)
 
-            # record the prediction and score to the logger
-            logger.record(f"score", score, step, percentile=True)
-            logger.record(f"solver/model_to_real",
-                          spearman(prediction[:, 0], score[:, 0]), step)
-            logger.record(f"solver/distance",
-                          tf.linalg.norm(xt - initial_x), step)
-            logger.record(f"solver/prediction",
-                          prediction, step)
-            logger.record(f"solver/model_overestimation",
-                          final_prediction - prediction, step)
-            logger.record(f"solver/overestimation",
-                          prediction - score, step)
 
-        if not fast:
+        scores.append(score)
+        predictions.append(prediction)
 
-            scores.append(score)
-            predictions.append(prediction)
-
-            # save the model predictions and scores to be aggregated later
-            np.save(os.path.join(logging_dir, "scores.npy"),
-                    np.concatenate(scores, axis=1))
-            np.save(os.path.join(logging_dir, "predictions.npy"),
-                    np.stack(predictions, axis=1))
-    """
+        # save the model predictions and scores to be aggregated later
+        np.save(os.path.join(logging_dir, "scores.npy"),
+                np.concatenate(scores, axis=1))
+        np.save(os.path.join(logging_dir, "predictions.npy"),
+                np.stack(predictions, axis=1))
 
 
 # run COMs using the command line interface

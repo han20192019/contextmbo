@@ -188,17 +188,21 @@ class ConservativeObjectiveModel(tf.Module):
             mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
 
             # loss that combines maximum likelihood with a constraint
-            model_loss = mse + self.alpha * overestimation + mmd
-            total_loss = tf.reduce_mean(model_loss)
+            model_loss1 = mse + self.alpha * overestimation + mmd
+            total_loss1 = tf.reduce_mean(model_loss1)
             alpha_loss = tf.reduce_mean(alpha_loss)
+            
+            model_loss2 = mse - self.alpha * overestimation + mmd
+            total_loss2 = tf.reduce_mean(model_loss2)
+
 
 
         # calculate gradients using the model
         alpha_grads = tape.gradient(alpha_loss, self.log_alpha)
         model_grads = tape.gradient(
-            total_loss, self.forward_model.trainable_variables)
+            total_loss1, self.forward_model.trainable_variables)
         rep_grads = tape.gradient(
-            total_loss, self.rep_model.trainable_variables)
+            total_loss2, self.rep_model.trainable_variables)
 
         # take gradient steps on the model
         self.alpha_opt.apply_gradients([[alpha_grads, self.log_alpha]])
@@ -206,17 +210,6 @@ class ConservativeObjectiveModel(tf.Module):
             model_grads, self.forward_model.trainable_variables))
         self.rep_model_opt.apply_gradients(zip(
             rep_grads, self.rep_model.trainable_variables))
-
-        #for debug
-        input_shape = x.shape[1:][0]
-        learned_x = self.policy_model.get_sample(size=self.new_sample_size, training=False)
-        learned_x = tf.reshape(learned_x, (self.new_sample_size, input_shape))
-        rep_learnedx = self.rep_model(learned_x, training=False)
-        d_pos_learned = self.forward_model(rep_learnedx, training=False)
-        rewards_policy_samples = tf.reduce_mean(d_pos_learned)
-        statistics[f'train_fphi/rewards_policy_samples'] = rewards_policy_samples
-
-
 
         return statistics
     
@@ -386,12 +379,6 @@ class ConservativeObjectiveModel(tf.Module):
             print(e)
             for name, loss in self.train(train_data).items():
                 logger.record(name, loss, e)
-            for name, loss in self.train_pi(train_data).items():
-                logger.record(name, loss, e)
-            """
-            for name, loss in self.validate(validate_data).items():
-                logger.record(name, loss, e)
-            """
 
 
 class VAETrainer(tf.Module):
