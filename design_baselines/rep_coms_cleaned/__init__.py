@@ -175,7 +175,8 @@ def coms_cleaned(
         rep_model_lr,
         rep_model_hidden_size,
         noise_input,
-        policy_model_lr):
+        policy_model_lr,
+        mmd_param):
     """Solve a Model-Based Optimization problem using the method:
     Conservative Objective Models (COMs).
 
@@ -264,7 +265,7 @@ def coms_cleaned(
     particle_lr = particle_lr * np.sqrt(np.prod(input_shape))
 
     # make a trainer for the forward model
-    trainer = ConservativeObjectiveModel(policy_model = policy_model, 
+    trainer = ConservativeObjectiveModel(mmd_param = mmd_param, policy_model = policy_model, 
         policy_model_lr = policy_model_lr, rep_model=rep_model, 
         rep_model_lr=rep_model_lr,
         forward_model=forward_model, forward_model_opt=tf.keras.optimizers.Adam,
@@ -285,6 +286,8 @@ def coms_cleaned(
                    logger, forward_model_epochs)
 
     # select the top k initial designs from the dataset
+    x = task.x
+    y = task.y
     indices = tf.math.top_k(y[:, 0], k=evaluation_samples)[1]
     initial_x = tf.gather(x, indices, axis=0)
     initial_y = tf.gather(y, indices, axis=0)
@@ -319,7 +322,7 @@ def coms_cleaned(
         
         solution = final_xt
 
-        np.save(os.path.join(logging_dir, "solution.npy"), solution)
+        np.save(os.path.join(logging_dir, "testrep.npy"), solution)
 
         # evaluate the solutions found by the model
         score = task.predict(solution)
@@ -352,9 +355,9 @@ def coms_cleaned(
         predictions.append(prediction)
 
         # save the model predictions and scores to be aggregated later
-        np.save(os.path.join(logging_dir, "scores.npy"),
+        np.save(os.path.join(logging_dir, "testrep.npy"),
                 np.concatenate(scores, axis=1))
-        np.save(os.path.join(logging_dir, "predictions.npy"),
+        np.save(os.path.join(logging_dir, "testrep.npy"),
                 np.stack(predictions, axis=1))
 
 

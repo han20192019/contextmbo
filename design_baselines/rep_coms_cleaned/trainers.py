@@ -8,7 +8,7 @@ import numpy as np
 
 class ConservativeObjectiveModel(tf.Module):
 
-    def __init__(self, policy_model, policy_model_lr, rep_model, rep_model_lr, 
+    def __init__(self, mmd_param, policy_model, policy_model_lr, rep_model, rep_model_lr, 
                  forward_model, policy_model_opt=tf.keras.optimizers.Adam, 
                  rep_model_opt=tf.keras.optimizers.Adam,
                  forward_model_opt=tf.keras.optimizers.Adam,
@@ -58,6 +58,7 @@ class ConservativeObjectiveModel(tf.Module):
         """
 
         super().__init__()
+        self.mmd_param = mmd_param
         self.policy_model = policy_model
         self.rep_model = rep_model
         self.rep_model_lr = rep_model_lr
@@ -155,6 +156,8 @@ class ConservativeObjectiveModel(tf.Module):
 
         statistics = dict()
         with tf.GradientTape(persistent=True) as tape:
+            
+            alpha_param = self.alpha
 
             # calculate the prediction error and accuracy of the model
             rep_x = self.rep_model(x, training= True)
@@ -183,17 +186,27 @@ class ConservativeObjectiveModel(tf.Module):
 
             #calculate mmd loss(new added)
             logged_rep = tf.reduce_mean(rep_x, axis=0)
-            #here use d_neg_rep????
-            learned_rep = tf.reduce_mean(d_neg_rep, axis=0)
+            #here use rep_x_neg????
+            learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
             mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
+            statistics[f'train/mmd'] = mmd
 
-            # loss that combines maximum likelihood with a constraint
-            model_loss1 = mse + self.alpha * overestimation + mmd
+            # loss that combines maximum likelihood with a constraintch
+            mmd_param  =  self.mmd_param
+            #model_loss1 = mse + alpha_param * overestimation + mmd*mmd_param
+            model_loss1 = mse + mmd*mmd_param
+            #model_loss1 = mse
+            #model_loss1 = mse + self.alpha * overestimation
             total_loss1 = tf.reduce_mean(model_loss1)
+            statistics[f'train/loss1'] = total_loss1
             alpha_loss = tf.reduce_mean(alpha_loss)
             
-            model_loss2 = mse - self.alpha * overestimation + mmd
+            #model_loss2 = mse + alpha_param * overestimation + mmd*mmd_param
+            model_loss2 = mse + mmd*mmd_param
+            #model_loss2 = mse
+            #model_loss2 = mse + self.alpha * overestimation
             total_loss2 = tf.reduce_mean(model_loss2)
+            statistics[f'train/loss2'] = total_loss2
 
 
 

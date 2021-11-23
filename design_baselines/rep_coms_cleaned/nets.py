@@ -20,7 +20,7 @@ class TanhMultiplier(tf.keras.layers.Layer):
 
 def ForwardModel(input_shape,
                  activations=('relu', 'relu'),
-                 hidden_size=2048,
+                 hidden_size=1024,
                  final_tanh=False):
     """Creates a tensorflow model that outputs a probability distribution
     specifying the score corresponding to an input x.
@@ -237,6 +237,7 @@ class PolicyContinuousForwardModel(tf.keras.Sequential):
         initial_min_std: float
             the starting lower bound of the standard deviation
         """
+        super().__init__()
         self.distribution = tfpd.MultivariateNormalDiag
         self.max_logstd = tf.Variable(tf.fill([1, 1], np.log(
             initial_max_std).astype(np.float32)), trainable=True)
