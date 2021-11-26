@@ -134,7 +134,7 @@ class ConservativeObjectiveModel(tf.Module):
             maximum_iterations=steps)[0]
 
     @tf.function(experimental_relax_shapes=True)
-    def train_step(self, x, y):
+    def train_step(self, x, y, e):
         """Perform a training step of gradient descent on an ensemble
         using bootstrap weights for each model in the ensemble
 
@@ -191,7 +191,9 @@ class ConservativeObjectiveModel(tf.Module):
             mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
             statistics[f'train/mmd'] = mmd
 
+            #turn = np.floor(e/100)
             # loss that combines maximum likelihood with a constraintch
+            #mmd_param  =  self.mmd_param/(np.power(2, turn))
             mmd_param  =  self.mmd_param
             #model_loss1 = mse + alpha_param * overestimation + mmd*mmd_param
             model_loss1 = mse + mmd*mmd_param
@@ -279,7 +281,8 @@ class ConservativeObjectiveModel(tf.Module):
         statistics = dict()
 
         # calculate the prediction error and accuracy of the model
-        d_pos = self.forward_model(x, training=False)
+        rep_x = self.rep_model(x, training = False)
+        d_pos = self.forward_model(rep_x, training=False)
         mse = tf.keras.losses.mean_squared_error(y, d_pos)
         statistics[f'validate/mse'] = mse
 
@@ -292,12 +295,20 @@ class ConservativeObjectiveModel(tf.Module):
             x, self.particle_gradient_steps, training=False)
 
         # calculate the prediction error and accuracy of the model
-        d_neg = self.forward_model(x_neg, training=False)
+        rep_x_neg = self.rep_model(x_neg, training=False)
+        d_neg = self.forward_model(rep_x_neg, training=False)
         overestimation = d_neg[:, 0] - d_pos[:, 0]
         statistics[f'validate/overestimation'] = overestimation
+
+        #calculate mmd loss(new added)
+        logged_rep = tf.reduce_mean(rep_x, axis=0)
+        #here use rep_x_neg????
+        learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
+        mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
+        statistics[f'validate/mmd'] = mmd
         return statistics
 
-    def train(self, dataset):
+    def train(self, dataset, e):
         """Perform training using gradient descent on an ensemble
         using bootstrap weights for each model in the ensemble
 
@@ -314,7 +325,7 @@ class ConservativeObjectiveModel(tf.Module):
 
         statistics = defaultdict(list)
         for x, y in dataset:
-            for name, tensor in self.train_step(x, y).items():
+            for name, tensor in self.train_step(x, y, e).items():
                 statistics[name].append(tensor)
         for name in statistics.keys():
             statistics[name] = tf.concat(statistics[name], axis=0)
@@ -390,8 +401,10 @@ class ConservativeObjectiveModel(tf.Module):
 
         for e in range(epochs):
             print(e)
-            for name, loss in self.train(train_data).items():
+            for name, loss in self.train(train_data, e).items():
                 logger.record(name, loss, e)
+            #for name, loss in self.validate(validate_data).items():
+                #logger.record(name, loss, e)
 
 
 class VAETrainer(tf.Module):

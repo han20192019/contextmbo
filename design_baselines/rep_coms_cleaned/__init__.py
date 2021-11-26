@@ -276,6 +276,7 @@ def coms_cleaned(
         particle_gradient_steps=particle_train_gradient_steps,
         entropy_coefficient=particle_entropy_coefficient)
 
+    forward_model_val_size = int(task.x.shape[0]*0.3)
     # create a data set
     train_data, validate_data = build_pipeline(
         x=x, y=y, batch_size=forward_model_batch_size,

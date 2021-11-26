@@ -1,8 +1,8 @@
 from design_baselines.cbas import cbas
 from design_baselines.rep import rep
 from design_baselines.rep_coms_cleaned import coms_cleaned
-coms_cleaned(logging_dir = "testsuper/supercom",
-                        task='Superconductor-RandomForest-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
+coms_cleaned(logging_dir = "nfs/kun2/users/hanqi2019/1124hopper/hoppermmd1rep1",
+                        task='HopperController-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
                         task_relabel=True,
                         normalize_ys=True,
                         normalize_xs=True,
