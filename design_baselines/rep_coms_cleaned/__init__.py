@@ -12,6 +12,8 @@ import numpy as np
 import os
 import click
 import json
+from tensorboard.plugins import projector
+import random
 
 """
 @click.command()
@@ -136,6 +138,73 @@ import json
               default=True,
               help='Whether to run experiment quickly and only log once.')
 """
+def visualize1(data, labels, num):
+    num = str(num)
+    print(data.shape)
+    print(labels.shape)
+    # Set up a logs directory, so Tensorboard knows where to look for files.
+    log_dir='/nfs/kun2/users/hanqi2019/input_graph'
+    d1 = 'metadata.tsv'
+    d2 = "embedding/.ATTRIBUTES/VARIABLE_VALUE"
+    #d2 = "var1"
+    d3 = "embedding.ckpt"
+    print(d1)
+    # Save Labels separately on a line-by-line manner.
+    with open(os.path.join(log_dir, d1), "w") as f:
+        for subwords in labels:
+            f.write("{}\n".format(subwords))
+    
+    # Save the weights we want to analyze as a variable. Note that the first
+    # value represents any unknown word, which is not in the metadata, here
+    # we will remove this value.
+    weights = tf.Variable(data)
+    # Create a checkpoint from embedding, the filename and key are the
+    # name of the tensor.
+    checkpoint = tf.train.Checkpoint(embedding=weights)
+    checkpoint.save(os.path.join(log_dir, d3))
+
+    # Set up config.
+    config = projector.ProjectorConfig()
+    embedding = config.embeddings.add()
+    # The name of the tensor will be suffixed by `/.ATTRIBUTES/VARIABLE_VALUE`.
+    embedding.tensor_name = d2
+    embedding.metadata_path = d1
+    projector.visualize_embeddings(log_dir, config)
+
+def visualize2(data, labels, num):
+    num = str(num)
+    print(data.shape)
+    print(labels.shape)
+    # Set up a logs directory, so Tensorboard knows where to look for files.
+    log_dir='/nfs/kun2/users/hanqi2019/solution_graph'
+    d1 = 'metadata.tsv'
+    d2 = "embedding/.ATTRIBUTES/VARIABLE_VALUE"
+    #d2 = "var1"
+    d3 = "embedding.ckpt"
+    print(d1)
+    # Save Labels separately on a line-by-line manner.
+    with open(os.path.join(log_dir, d1), "w") as f:
+        for subwords in labels:
+            f.write("{}\n".format(subwords))
+
+    # Save the weights we want to analyze as a variable. Note that the first
+    # value represents any unknown word, which is not in the metadata, here
+    # we will remove this value.
+    weights = tf.Variable(data)
+    # Create a checkpoint from embedding, the filename and key are the
+    # name of the tensor.
+    checkpoint = tf.train.Checkpoint(embedding=weights)
+    checkpoint.save(os.path.join(log_dir, d3))
+
+    # Set up config.
+    config = projector.ProjectorConfig()
+    embedding = config.embeddings.add()
+    # The name of the tensor will be suffixed by `/.ATTRIBUTES/VARIABLE_VALUE`.
+    embedding.tensor_name = d2
+    embedding.metadata_path = d1
+    projector.visualize_embeddings(log_dir, config)
+
+
 def coms_cleaned(
         logging_dir,
         task,
@@ -176,7 +245,8 @@ def coms_cleaned(
         rep_model_hidden_size,
         noise_input,
         policy_model_lr,
-        mmd_param):
+        mmd_param,
+        seed=10):
     """Solve a Model-Based Optimization problem using the method:
     Conservative Objective Models (COMs).
 
@@ -241,6 +311,7 @@ def coms_cleaned(
     y = task.y
     print(task.is_discrete)
 
+
     input_shape = x.shape[1:]
     print("input_shape:")
     print(input_shape)
@@ -276,12 +347,14 @@ def coms_cleaned(
         particle_gradient_steps=particle_train_gradient_steps,
         entropy_coefficient=particle_entropy_coefficient)
 
-    forward_model_val_size = int(task.x.shape[0]*0.3)
+    #forward_model_val_size = int(task.x.shape[0]*0.3)
     # create a data set
+
     train_data, validate_data = build_pipeline(
         x=x, y=y, batch_size=forward_model_batch_size,
         val_size=forward_model_val_size)
 
+    np.random.seed(seed)
     # train the forward model
     trainer.launch(train_data, validate_data,
                    logger, forward_model_epochs)
@@ -313,6 +386,10 @@ def coms_cleaned(
     xt_ori_rep = rep_model(xt_ori, training = False)
     prediction_ori = forward_model(xt_ori_rep, training=False).numpy()
 
+    #visualize1(rep_model(x, training = False), y, 0)
+    # add zero x
+    score = task.predict(xt)
+    logger.record(f"score/score", score, 0, percentile=True)
     for step in range(0, 1 + particle_evaluate_gradient_steps):
 
         # update the set of solution particles
@@ -321,13 +398,19 @@ def coms_cleaned(
             xt, particle_train_gradient_steps, training=False)
 
         
-        solution = final_xt
+        #solution = final_xt
+        solution = xt
 
         np.save(os.path.join(logging_dir, "testrep.npy"), solution)
 
         # evaluate the solutions found by the model
         score = task.predict(solution)
-        xt_rep = rep_model(xt, training = False)
+
+        xt_rep = rep_model(solution, training = False)
+
+        #if step == 5:
+            #visualize2(xt_rep, score, step+1)
+
         prediction = forward_model(xt_rep, training=False).numpy()
         print(step)
         mean_score = tf.reduce_mean(score)
@@ -338,18 +421,18 @@ def coms_cleaned(
             prediction = task.denormalize_y(prediction)
 
         # record the prediction and score to the logger
-        logger.record(f"score/score", score, step, percentile=True)
-        logger.record(f"score/score_mean", mean_score, step, percentile=True)
+        logger.record(f"score/score", score, step+1, percentile=True)
+        logger.record(f"score/score_mean", mean_score, step+1, percentile=True)
         logger.record(f"solver/model_to_real",
-                        spearman(prediction[:, 0], score[:, 0]), step)
+                        spearman(prediction[:, 0], score[:, 0]), step+1)
         logger.record(f"solver/distance",
-                        tf.linalg.norm(xt - initial_x), step)
+                        tf.linalg.norm(xt - initial_x), step+1)
         logger.record(f"solver/prediction",
-                        prediction, step)
+                        prediction, step+1)
         logger.record(f"solver/model_overestimation",
-                        prediction_ori - prediction, step)
+                        prediction_ori - prediction, step+1)
         logger.record(f"solver/overestimation",
-                        prediction - score, step)
+                        prediction - score, step+1)
 
 
         scores.append(score)

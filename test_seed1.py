@@ -1,8 +1,8 @@
 from design_baselines.cbas import cbas
 from design_baselines.rep import rep
 from design_baselines.rep_coms_cleaned import coms_cleaned
-coms_cleaned(logging_dir = "/nfs/kun2/users/hanqi2019/comparesuper",
-                        task='Superconductor-RandomForest-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
+coms_cleaned(logging_dir = "/nfs/kun2/users/hanqi2019/antseed1",
+                        task='AntMorphology-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
                         task_relabel=True,
                         normalize_ys=True,
                         normalize_xs=True,
@@ -40,7 +40,8 @@ coms_cleaned(logging_dir = "/nfs/kun2/users/hanqi2019/comparesuper",
                         rep_model_hidden_size=2048,
                         policy_model_lr=0.0003,
                         noise_input = [1, 10],
-                        mmd_param = 1
+                        mmd_param = 1,
+                        seed = 5
 )
 
 """

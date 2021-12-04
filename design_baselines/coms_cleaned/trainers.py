@@ -8,9 +8,7 @@ import numpy as np
 
 class ConservativeObjectiveModel(tf.Module):
 
-    def __init__(self, mmd_param, policy_model, policy_model_lr, rep_model, rep_model_lr, 
-                 forward_model, policy_model_opt=tf.keras.optimizers.Adam, 
-                 rep_model_opt=tf.keras.optimizers.Adam,
+    def __init__(self, forward_model,
                  forward_model_opt=tf.keras.optimizers.Adam,
                  forward_model_lr=0.001, alpha=1.0,
                  alpha_opt=tf.keras.optimizers.Adam,
@@ -19,9 +17,7 @@ class ConservativeObjectiveModel(tf.Module):
                  entropy_coefficient=0.9, noise_std=0.0):
         """A trainer class for building a conservative objective model
         by optimizing a model to make conservative predictions
-
         Arguments:
-
         forward_model: tf.keras.Model
             a tf.keras model that accepts designs from an MBO dataset
             as inputs and predicts their score
@@ -58,17 +54,9 @@ class ConservativeObjectiveModel(tf.Module):
         """
 
         super().__init__()
-        self.mmd_param = mmd_param
-        self.policy_model = policy_model
-        self.rep_model = rep_model
-        self.rep_model_lr = rep_model_lr
         self.forward_model = forward_model
         self.forward_model_opt = \
             forward_model_opt(learning_rate=forward_model_lr)
-        self.rep_model_opt = \
-            rep_model_opt(learning_rate=rep_model_lr)
-        self.policy_model_opt = \
-            policy_model_opt(learning_rate=policy_model_lr)
 
         # lagrangian dual descent variables
         self.log_alpha = tf.Variable(np.log(alpha).astype(np.float32))
@@ -82,24 +70,18 @@ class ConservativeObjectiveModel(tf.Module):
         self.entropy_coefficient = entropy_coefficient
         self.noise_std = noise_std
 
-        self.new_sample_size = 128 
-
     @tf.function(experimental_relax_shapes=True)
     def optimize(self, x, steps, **kwargs):
         """Using gradient descent find adversarial versions of x
         that maximize the conservatism of the model
-
         Args:
-
         x: tf.Tensor
             the starting point for the optimizer that will be
             updated using gradient ascent
         steps: int
             the number of gradient ascent steps to take in order to
             find x that maximizes conservatism
-
         Returns:
-
         optimized_x: tf.Tensor
             a new design found by perform gradient ascent starting
             from the initial x provided as an argument
@@ -118,8 +100,7 @@ class ConservativeObjectiveModel(tf.Module):
                 entropy = tf.reduce_mean((xt - shuffled_xt) ** 2)
 
                 # the predicted score according to the forward model
-                xt_rep = self.rep_model(xt, training = False)
-                score = self.forward_model(xt_rep, **kwargs)
+                score = self.forward_model(xt, **kwargs)
 
                 # the conservatism of the current set of particles
                 loss = self.entropy_coefficient * entropy + score
@@ -137,16 +118,12 @@ class ConservativeObjectiveModel(tf.Module):
     def train_step(self, x, y):
         """Perform a training step of gradient descent on an ensemble
         using bootstrap weights for each model in the ensemble
-
         Args:
-
         x: tf.Tensor
             a batch of training inputs shaped like [batch_size, channels]
         y: tf.Tensor
             a batch of training labels shaped like [batch_size, 1]
-
         Returns:
-
         statistics: dict
             a dictionary that contains logging information
         """
@@ -156,17 +133,14 @@ class ConservativeObjectiveModel(tf.Module):
 
         statistics = dict()
         with tf.GradientTape(persistent=True) as tape:
-            
-            alpha_param = self.alpha
 
             # calculate the prediction error and accuracy of the model
-            rep_x = self.rep_model(x, training= True)
-            d_pos_rep = self.forward_model(rep_x, training=True)
-            mse = tf.keras.losses.mean_squared_error(y, d_pos_rep)
+            d_pos = self.forward_model(x, training=True)
+            mse = tf.keras.losses.mean_squared_error(y, d_pos)
             statistics[f'train/mse'] = mse
 
             # evaluate how correct the rank fo the model predictions are
-            rank_corr = spearman(y[:, 0], d_pos_rep[:, 0])
+            rank_corr = spearman(y[:, 0], d_pos[:, 0])
             statistics[f'train/rank_corr'] = rank_corr
 
             # calculate negative samples starting from the dataset
@@ -174,9 +148,8 @@ class ConservativeObjectiveModel(tf.Module):
                 x, self.particle_gradient_steps, training=False)
 
             # calculate the prediction error and accuracy of the model
-            rep_x_neg = self.rep_model(x_neg, training= False)
-            d_neg_rep = self.forward_model(rep_x_neg, training=False)
-            overestimation = d_neg_rep[:, 0] - d_pos_rep[:, 0]
+            d_neg = self.forward_model(x_neg, training=False)
+            overestimation = d_neg[:, 0] - d_pos[:, 0]
             statistics[f'train/overestimation'] = overestimation
 
             # build a lagrangian for dual descent
@@ -184,112 +157,46 @@ class ConservativeObjectiveModel(tf.Module):
                           self.alpha * overestimation)
             statistics[f'train/alpha'] = self.alpha
 
-            #calculate mmd loss(new added)
-            logged_rep = tf.reduce_mean(rep_x, axis=0)
-            #here use rep_x_neg????
-            learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
-            mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
-            statistics[f'train/mmd'] = mmd
-
-            #turn = np.floor(e/100)
-            # loss that combines maximum likelihood with a constraintch
-            #mmd_param  =  self.mmd_param/(np.power(2, turn))
-            mmd_param  =  self.mmd_param
-            #model_loss1 = mse + alpha_param * overestimation + mmd*mmd_param
-            model_loss1 = mse + mmd*mmd_param
-            #model_loss1 = mse
-            #model_loss1 = mse + self.alpha * overestimation
-            total_loss1 = tf.reduce_mean(model_loss1)
-            statistics[f'train/loss1'] = total_loss1
+            # loss that combines maximum likelihood with a constraint
+            model_loss = mse + self.alpha * overestimation
+            total_loss = tf.reduce_mean(model_loss)
             alpha_loss = tf.reduce_mean(alpha_loss)
-            
-            #model_loss2 = mse + alpha_param * overestimation + mmd*mmd_param
-            model_loss2 = mse + mmd*mmd_param
-            #model_loss2 = mse
-            #model_loss2 = mse + self.alpha * overestimation
-            total_loss2 = tf.reduce_mean(model_loss2)
-            statistics[f'train/loss2'] = total_loss2
-
-
 
         # calculate gradients using the model
         alpha_grads = tape.gradient(alpha_loss, self.log_alpha)
         model_grads = tape.gradient(
-            total_loss1, self.forward_model.trainable_variables)
-        rep_grads = tape.gradient(
-            total_loss2, self.rep_model.trainable_variables)
+            total_loss, self.forward_model.trainable_variables)
 
         # take gradient steps on the model
         self.alpha_opt.apply_gradients([[alpha_grads, self.log_alpha]])
         self.forward_model_opt.apply_gradients(zip(
             model_grads, self.forward_model.trainable_variables))
-        self.rep_model_opt.apply_gradients(zip(
-            rep_grads, self.rep_model.trainable_variables))
 
-        return statistics
-    
-    # @tf.function(experimental_relax_shapes=True)
-    def train_step_pi(self, x):
-        statistics = dict()
-        with tf.GradientTape(persistent=True) as tape:
-
-            repx = self.rep_model(x, training=False)
-            d_pos = self.forward_model(repx, training=False)
-
-            # Policy Reward
-            input_shape = x.shape[1:][0]
-            learned_x = self.policy_model.get_sample(size=self.new_sample_size, training=True)
-            learned_x = tf.reshape(learned_x, (self.new_sample_size, input_shape))
-            rep_learnedx = self.rep_model(learned_x, training=False)
-            d_pos_learned = self.forward_model(rep_learnedx, training=False)
-            rewards = tf.reduce_mean(d_pos_learned)
-
-            statistics[f'train/rewards'] = rewards
-            loss = -rewards
-            
-            distribution = self.policy_model.get_distribution(training=False)
-            statistics[f'train/distribution_mean'] = distribution.mean()
-            statistics[f'train/distribution_std'] = distribution.stddev()
-
-
-
-        # calculate gradients using the model
-        pi_grads = tape.gradient(loss, self.policy_model.trainable_variables)
-        self.policy_model_opt.apply_gradients(zip(
-            pi_grads, self.policy_model.trainable_variables))
-        
         return statistics
 
     @tf.function(experimental_relax_shapes=True)
     def validate_step(self, x, y):
         """Perform a validation step on an ensemble of models
         without using bootstrapping weights
-
         Args:
-
         x: tf.Tensor
             a batch of validation inputs shaped like [batch_size, channels]
         y: tf.Tensor
             a batch of validation labels shaped like [batch_size, 1]
-
         Returns:
-
         statistics: dict
             a dictionary that contains logging information
         """
 
         statistics = dict()
 
-        alpha_param = self.alpha
-
         # calculate the prediction error and accuracy of the model
-        rep_x = self.rep_model(x, training= False)
-        d_pos_rep = self.forward_model(rep_x, training=False)
-        mse = tf.keras.losses.mean_squared_error(y, d_pos_rep)
+        d_pos = self.forward_model(x, training=False)
+        mse = tf.keras.losses.mean_squared_error(y, d_pos)
         statistics[f'validate/mse'] = mse
 
         # evaluate how correct the rank fo the model predictions are
-        rank_corr = spearman(y[:, 0], d_pos_rep[:, 0])
+        rank_corr = spearman(y[:, 0], d_pos[:, 0])
         statistics[f'validate/rank_corr'] = rank_corr
 
         # calculate negative samples starting from the dataset
@@ -297,47 +204,18 @@ class ConservativeObjectiveModel(tf.Module):
             x, self.particle_gradient_steps, training=False)
 
         # calculate the prediction error and accuracy of the model
-        rep_x_neg = self.rep_model(x_neg, training= False)
-        d_neg_rep = self.forward_model(rep_x_neg, training=False)
-        overestimation = d_neg_rep[:, 0] - d_pos_rep[:, 0]
+        d_neg = self.forward_model(x_neg, training=False)
+        overestimation = d_neg[:, 0] - d_pos[:, 0]
         statistics[f'validate/overestimation'] = overestimation
-
-        # build a lagrangian for dual descent
-        alpha_loss = (self.alpha * self.overestimation_limit -
-                        self.alpha * overestimation)
-        statistics[f'validate/alpha'] = self.alpha
-
-        #calculate mmd loss(new added)
-        logged_rep = tf.reduce_mean(rep_x, axis=0)
-        #here use rep_x_neg????
-        learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
-        mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
-        statistics[f'validate/mmd'] = mmd
-
-        mmd_param  =  self.mmd_param
-
-        model_loss1 = mse + mmd*mmd_param
-        total_loss1 = tf.reduce_mean(model_loss1)
-        statistics[f'validate/loss1'] = total_loss1
-        alpha_loss = tf.reduce_mean(alpha_loss)
-        
-        model_loss2 = mse + mmd*mmd_param
-        total_loss2 = tf.reduce_mean(model_loss2)
-        statistics[f'validate/loss2'] = total_loss2
-
         return statistics
 
     def train(self, dataset):
         """Perform training using gradient descent on an ensemble
         using bootstrap weights for each model in the ensemble
-
         Args:
-
         dataset: tf.data.Dataset
             the training dataset already batched and prefetched
-
         Returns:
-
         loss_dict: dict
             a dictionary mapping names to loss values for logging
         """
@@ -349,47 +227,14 @@ class ConservativeObjectiveModel(tf.Module):
         for name in statistics.keys():
             statistics[name] = tf.concat(statistics[name], axis=0)
         return statistics
-        """
-        statistics = defaultdict(list)
-        for x, y in dataset:
-            self.train_step(x, y)
-        
-        for name in statistics.keys():
-            statistics[name] = tf.concat(statistics[name], axis=0)
-        
-        return statistics
-        """
-    
-    def train_pi(self, dataset):
-        """Perform training using gradient descent on an ensemble
-        using bootstrap weights for each model in the ensemble
-        Args:
-        dataset: tf.data.Dataset
-            the training dataset already batched and prefetched
-        Returns:
-        loss_dict: dict
-            a dictionary mapping names to loss values for logging
-        """
-
-        statistics = defaultdict(list)
-        for x, y in dataset:
-            for name, tensor in self.train_step_pi(x).items():
-                statistics[name].append(tensor)
-        for name in statistics.keys():
-            statistics[name] = tf.concat(statistics[name], axis=0)
-        return statistics
 
     def validate(self, dataset):
         """Perform validation on an ensemble of models without
         using bootstrapping weights
-
         Args:
-
         dataset: tf.data.Dataset
             the validation dataset already batched and prefetched
-
         Returns:
-
         loss_dict: dict
             a dictionary mapping names to loss values for logging
         """
@@ -405,9 +250,7 @@ class ConservativeObjectiveModel(tf.Module):
     def launch(self, train_data, validate_data, logger, epochs):
         """Launch training and validation for the model for the specified
         number of epochs, and log statistics
-
         Args:
-
         train_data: tf.data.Dataset
             the training dataset already batched and prefetched
         validate_data: tf.data.Dataset
@@ -434,9 +277,7 @@ class VAETrainer(tf.Module):
                  lr=0.001, beta=1.0):
         """Build a trainer for an ensemble of probabilistic neural networks
         trained on bootstraps of a dataset
-
         Args:
-
         oracles: List[tf.keras.Model]
             a list of keras model that predict distributions over scores
         oracle_optim: __class__
@@ -457,14 +298,10 @@ class VAETrainer(tf.Module):
                    x):
         """Perform a training step of gradient descent on an ensemble
         using bootstrap weights for each model in the ensemble
-
         Args:
-
         x: tf.Tensor
             a batch of training inputs shaped like [batch_size, channels]
-
         Returns:
-
         statistics: dict
             a dictionary that contains logging information
         """
@@ -501,14 +338,10 @@ class VAETrainer(tf.Module):
                       x):
         """Perform a validation step on an ensemble of models
         without using bootstrapping weights
-
         Args:
-
         x: tf.Tensor
             a batch of validation inputs shaped like [batch_size, channels]
-
         Returns:
-
         statistics: dict
             a dictionary that contains logging information
         """
@@ -534,39 +367,30 @@ class VAETrainer(tf.Module):
               dataset):
         """Perform training using gradient descent on an ensemble
         using bootstrap weights for each model in the ensemble
-
         Args:
-
         dataset: tf.data.Dataset
             the training dataset already batched and prefetched
-
         Returns:
-
         loss_dict: dict
             a dictionary mapping names to loss values for logging
         """
 
         statistics = defaultdict(list)
         for x, y in dataset:
-            self.train_step(x)
-        """
+            for name, tensor in self.train_step(x).items():
+                statistics[name].append(tensor)
         for name in statistics.keys():
             statistics[name] = tf.concat(statistics[name], axis=0)
-        """
         return statistics
 
     def validate(self,
                  dataset):
         """Perform validation on an ensemble of models without
         using bootstrapping weights
-
         Args:
-
         dataset: tf.data.Dataset
             the validation dataset already batched and prefetched
-
         Returns:
-
         loss_dict: dict
             a dictionary mapping names to loss values for logging
         """
@@ -586,9 +410,7 @@ class VAETrainer(tf.Module):
                epochs):
         """Launch training and validation for the model for the specified
         number of epochs, and log statistics
-
         Args:
-
         train_data: tf.data.Dataset
             the training dataset already batched and prefetched
         validate_data: tf.data.Dataset
@@ -598,8 +420,8 @@ class VAETrainer(tf.Module):
         epochs: int
             the number of epochs through the data sets to take
         """
+
         for e in range(epochs):
-            print(e)
             for name, loss in self.train(train_data).items():
                 logger.record(name, loss, e)
             for name, loss in self.validate(validate_data).items():

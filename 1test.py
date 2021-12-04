@@ -1,8 +1,8 @@
 from design_baselines.cbas import cbas
 from design_baselines.rep import rep
 from design_baselines.rep_coms_cleaned import coms_cleaned
-coms_cleaned(logging_dir = "nfs/kun2/users/hanqi2019/1124hopper/hoppermmd1rep1",
-                        task='HopperController-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
+coms_cleaned(logging_dir = "/nfs/kun2/users/hanqi2019/test",
+                        task='AntMorphology-Exact-v0', #Superconductor-RandomForest-v0 #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
                         task_relabel=True,
                         normalize_ys=True,
                         normalize_xs=True,
@@ -29,18 +29,19 @@ coms_cleaned(logging_dir = "nfs/kun2/users/hanqi2019/1124hopper/hoppermmd1rep1",
                         forward_model_alpha_lr=0.01,
                         forward_model_overestimation_limit=0.5,
                         forward_model_noise_std=0.0,
-                        forward_model_batch_size=1,
+                        forward_model_batch_size=128,
                         forward_model_val_size=200,
-                        forward_model_epochs=500,
+                        forward_model_epochs=2,
                         evaluation_samples=128,
                         fast=False,
-                        latent_space_size=[20,1],
+                        latent_space_size=[16,1],
                         rep_model_activations=['relu', 'relu'],
                         rep_model_lr=0.0003,
                         rep_model_hidden_size=2048,
                         policy_model_lr=0.0003,
                         noise_input = [1, 10],
-                        mmd_param = 0.01
+                        mmd_param = 500,
+                        seed = 1
 )
 
 """

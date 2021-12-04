@@ -3,6 +3,7 @@ from design_bench import make
 from tensorflow.data import Dataset
 import tensorflow as tf
 import numpy as np
+import random
 
 
 def build_pipeline(x, y, w=None, val_size=200, batch_size=128,
@@ -48,7 +49,8 @@ def build_pipeline(x, y, w=None, val_size=200, batch_size=128,
 
     # shuffle the dataset using a common set of indices
     indices = np.arange(x.shape[0])
-    np.random.shuffle(indices)
+    random.Random(10).shuffle(indices)
+    #print(indices)
 
     # create a training and validation split
     x = x[indices]
@@ -60,13 +62,14 @@ def build_pipeline(x, y, w=None, val_size=200, batch_size=128,
     if bootstraps > 0:
 
         # sample the data set with replacement
+        #tf.random.set_seed(10)
         train_inputs.append(tf.stack([
             tf.math.bincount(tf.random.uniform([size], minval=0,
-                                               maxval=size, dtype=tf.int32),
+                                               maxval=size, dtype=tf.int32, seed=10),
                             minlength=size, dtype=tf.float32)
                             for b in range(bootstraps)], axis=1))
 
-        # add noise to the labels to increase diversity
+        # add noise to the labels to increase diversity 
         if bootstraps_noise is not None:
             train_inputs.append(bootstraps_noise *
                                 tf.random.normal([size, bootstraps]))
@@ -77,9 +80,10 @@ def build_pipeline(x, y, w=None, val_size=200, batch_size=128,
         train_inputs.append(w[indices[val_size:]])
 
     # build the parallel tensorflow data loading pipeline
+    #print(train_inputs)
     training_dataset = Dataset.from_tensor_slices(tuple(train_inputs))
     validation_dataset = Dataset.from_tensor_slices(tuple(validate_inputs))
-    training_dataset = training_dataset.shuffle(size if buffer is None else buffer)
+    training_dataset = training_dataset.shuffle(size if buffer is None else buffer, seed=10)
     validation_dataset = validation_dataset
 
     # batch and prefetch each data set
