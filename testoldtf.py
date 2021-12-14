@@ -1,10 +1,10 @@
 from design_baselines.cbas import cbas
 from design_baselines.rep import rep
-from design_baselines.rep_coms_cleaned import coms_cleaned
-seed = [5]
+from design_baselines.coms_cleaned import coms_cleaned
+seed = [1]
 for s in seed:
-    coms_cleaned(logging_dir = "test",
-                            task='AntMorphology-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
+    coms_cleaned(logging_dir = "1207discrete/tf8/tfseed"+str(s),
+                            task='TFBind8-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
                             task_relabel=True,
                             normalize_ys=True,
                             normalize_xs=True,
@@ -44,4 +44,4 @@ for s in seed:
                             noise_input = [1, 10],
                             mmd_param = 1,
                             seed = s
-    )
+)

@@ -349,10 +349,10 @@ def coms_cleaned(
 
     #forward_model_val_size = int(task.x.shape[0]*0.3)
     # create a data set
-
+    val_size = int(x.shape[0]*0.3)
     train_data, validate_data = build_pipeline(
         x=x, y=y, batch_size=forward_model_batch_size,
-        val_size=forward_model_val_size)
+        val_size=val_size)
 
     np.random.seed(seed)
     # train the forward model
@@ -389,7 +389,6 @@ def coms_cleaned(
     #visualize1(rep_model(x, training = False), y, 0)
     # add zero x
     score = task.predict(xt)
-    logger.record(f"score/score", score, 0, percentile=True)
     for step in range(0, 1 + particle_evaluate_gradient_steps):
 
         # update the set of solution particles
@@ -397,52 +396,39 @@ def coms_cleaned(
         final_xt = trainer.optimize(
             xt, particle_train_gradient_steps, training=False)
 
-        
-        #solution = final_xt
-        solution = xt
+        if not fast or step == particle_evaluate_gradient_steps:
+            solution = xt
 
-        np.save(os.path.join(logging_dir, "testrep.npy"), solution)
+            # evaluate the solutions found by the model
+            score = task.predict(solution)
 
-        # evaluate the solutions found by the model
-        score = task.predict(solution)
+            xt_rep = rep_model(solution, training = False)
 
-        xt_rep = rep_model(solution, training = False)
+            prediction = forward_model(xt_rep, training=False).numpy()
+            print(step)
+            mean_score = tf.reduce_mean(score)
+            print(mean_score)
 
-        #if step == 5:
-            #visualize2(xt_rep, score, step+1)
+            if normalize_ys:
+                score = task.denormalize_y(score)
+                prediction = task.denormalize_y(prediction)
 
-        prediction = forward_model(xt_rep, training=False).numpy()
-        print(step)
-        mean_score = tf.reduce_mean(score)
-        print(mean_score)
+            # record the prediction and score to the logger
+            logger.record(f"score/score", score, step+1, percentile=True)
+            logger.record(f"score/score_mean", mean_score, step+1, percentile=True)
+            logger.record(f"solver/model_to_real",
+                            spearman(prediction[:, 0], score[:, 0]), step+1)
+            logger.record(f"solver/distance",
+                            tf.linalg.norm(xt - initial_x), step+1)
+            logger.record(f"solver/prediction",
+                            prediction, step+1)
+            logger.record(f"solver/model_overestimation",
+                            prediction_ori - prediction, step+1)
+            logger.record(f"solver/overestimation",
+                            prediction - score, step+1)
 
-        if normalize_ys:
-            score = task.denormalize_y(score)
-            prediction = task.denormalize_y(prediction)
-
-        # record the prediction and score to the logger
-        logger.record(f"score/score", score, step+1, percentile=True)
-        logger.record(f"score/score_mean", mean_score, step+1, percentile=True)
-        logger.record(f"solver/model_to_real",
-                        spearman(prediction[:, 0], score[:, 0]), step+1)
-        logger.record(f"solver/distance",
-                        tf.linalg.norm(xt - initial_x), step+1)
-        logger.record(f"solver/prediction",
-                        prediction, step+1)
-        logger.record(f"solver/model_overestimation",
-                        prediction_ori - prediction, step+1)
-        logger.record(f"solver/overestimation",
-                        prediction - score, step+1)
-
-
-        scores.append(score)
-        predictions.append(prediction)
-
-        # save the model predictions and scores to be aggregated later
-        np.save(os.path.join(logging_dir, "testrep.npy"),
-                np.concatenate(scores, axis=1))
-        np.save(os.path.join(logging_dir, "testrep.npy"),
-                np.stack(predictions, axis=1))
+            scores.append(score)
+            predictions.append(prediction)
 
 
 # run COMs using the command line interface

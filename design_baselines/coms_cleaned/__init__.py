@@ -140,11 +140,13 @@ def coms_cleaned(
 
     print("reach0")
     # create a data set
+    vforward_model_val_size = int(x.shape[0]*0.3)
     train_data, validate_data = build_pipeline(
         x=x, y=y, batch_size=forward_model_batch_size,
         val_size=forward_model_val_size)
 
     print("reach")
+    np.random.seed(seed)
     # train the forward model
     trainer.launch(train_data, validate_data,
                    logger, forward_model_epochs)
@@ -167,6 +169,7 @@ def coms_cleaned(
             solution = tf.argmax(logits, axis=2, output_type=tf.int32)
 
         score = task.predict(solution)
+        logger.record(f"score/score", score, 0, percentile=True)
 
         if normalize_ys:
             initial_y = task.denormalize_y(initial_y)
@@ -204,17 +207,17 @@ def coms_cleaned(
                 final_prediction = task.denormalize_y(final_prediction)
 
             # record the prediction and score to the logger
-            logger.record(f"score", score, step, percentile=True)
+            logger.record(f"score/score", score, step+1, percentile=True)
             logger.record(f"solver/model_to_real",
-                          spearman(prediction[:, 0], score[:, 0]), step)
+                          spearman(prediction[:, 0], score[:, 0]), step+1)
             logger.record(f"solver/distance",
-                          tf.linalg.norm(xt - initial_x), step)
+                          tf.linalg.norm(xt - initial_x), step+1)
             logger.record(f"solver/prediction",
-                          prediction, step)
+                          prediction, step+1)
             logger.record(f"solver/model_overestimation",
-                          final_prediction - prediction, step)
+                          final_prediction - prediction, step+1)
             logger.record(f"solver/overestimation",
-                          prediction - score, step)
+                          prediction - score, step+1)
 
         if not fast:
 

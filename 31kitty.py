@@ -1,10 +1,10 @@
 from design_baselines.cbas import cbas
 from design_baselines.rep import rep
-from design_baselines.rep_coms_cleaned import coms_cleaned
-seed = [5]
+from design_baselines.coms_cleaned import coms_cleaned
+seed = [1]
 for s in seed:
-    coms_cleaned(logging_dir = "test",
-                            task='AntMorphology-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
+    coms_cleaned(logging_dir = "kitty/fastoldcomkitty"+"seed"+str(s),
+                            task='DKittyMorphology-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
                             task_relabel=True,
                             normalize_ys=True,
                             normalize_xs=True,
@@ -35,7 +35,7 @@ for s in seed:
                             forward_model_val_size=200,
                             forward_model_epochs=500,
                             evaluation_samples=128,
-                            fast=False,
+                            fast=True,
                             latent_space_size=[16,1],
                             rep_model_activations=['relu', 'relu'],
                             rep_model_lr=0.0003,

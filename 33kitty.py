@@ -1,10 +1,10 @@
 from design_baselines.cbas import cbas
 from design_baselines.rep import rep
-from design_baselines.rep_coms_cleaned import coms_cleaned
-seed = [5]
+from design_baselines.coms_cleaned import coms_cleaned
+seed = [3]
 for s in seed:
-    coms_cleaned(logging_dir = "test",
-                            task='AntMorphology-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
+    coms_cleaned(logging_dir = "kitty/oldcomkitty"+"seed"+str(s),
+                            task='DKittyMorphology-Exact-v0', #ToyContinuous-Exact-V0,#'AntMorphology-Exact-v0', #HopperController-Exact-v0 #Discrete: TFBind8-Exact-v0
                             task_relabel=True,
                             normalize_ys=True,
                             normalize_xs=True,
