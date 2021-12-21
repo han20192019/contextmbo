@@ -17,7 +17,20 @@ class TanhMultiplier(tf.keras.layers.Layer):
         exp_multiplier = tf.math.exp(self.multiplier)
         return tf.math.tanh(inputs / exp_multiplier) * exp_multiplier
 
+def DiscriminatorModel(input_shape,
+                 activations=('relu', 'relu'),
+                 hidden_size=1024,
+                 final_tanh=False):
+    
+    layers = [tfkl.Flatten(input_shape=input_shape), 
+              tfkl.Dense(512, activation='linear'),
+              tfkl.LeakyReLU(0.2),
+              tfkl.Dense(256, activation='linear'),
+              tfkl.LeakyReLU(0.2),
+              tfkl.Dense(1, activation='linear')]
 
+    return tf.keras.Sequential(layers)
+    
 def ForwardModel(input_shape,
                  activations=('relu', 'relu'),
                  hidden_size=1024,
