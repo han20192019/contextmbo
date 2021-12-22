@@ -163,7 +163,10 @@ class ConservativeObjectiveModel(tf.Module):
             rep_x = self.rep_model(x, training= True)
             d_pos_rep = self.forward_model(rep_x, training=True)
             mse = tf.keras.losses.mean_squared_error(y, d_pos_rep)
-            statistics[f'train/mse'] = mse
+            statistics[f'train/mse_L2'] = mse
+            #mean absolute error between y and d_pos_rep
+            mse_l1 = tf.keras.losses.mean_absolute_error(y, d_pos_rep)
+            statistics[f'train/mse_L1'] = mse_l1
 
             # evaluate how correct the rank fo the model predictions are
             rank_corr = spearman(y[:, 0], d_pos_rep[:, 0])
@@ -186,10 +189,11 @@ class ConservativeObjectiveModel(tf.Module):
 
             #calculate mmd loss(new added)
             logged_rep = tf.reduce_mean(rep_x, axis=0)
-            #here use rep_x_neg????
             learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
             mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
-            statistics[f'train/mmd'] = mmd
+            statistics[f'train/mmd_L2'] = mmd
+            mmd_l1 = tf.reduce_mean(tf.keras.losses.mean_absolute_error(learned_rep, logged_rep))
+            statistics[f'train/mmd_L1'] = mmd_l1
 
             #turn = np.floor(e/100)
             # loss that combines maximum likelihood with a constraintch
@@ -309,7 +313,6 @@ class ConservativeObjectiveModel(tf.Module):
 
         #calculate mmd loss(new added)
         logged_rep = tf.reduce_mean(rep_x, axis=0)
-        #here use rep_x_neg????
         learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
         mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
         statistics[f'validate/mmd'] = mmd
