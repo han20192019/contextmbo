@@ -8,8 +8,8 @@ import numpy as np
 
 class ConservativeObjectiveModel(tf.Module):
 
-    def __init__(self, mmd_param, rep_model, rep_model_lr, 
-                 forward_model,
+    def __init__(self, mmd_param, policy_model, policy_model_lr, rep_model, rep_model_lr, 
+                 forward_model, policy_model_opt=tf.keras.optimizers.Adam, 
                  rep_model_opt=tf.keras.optimizers.Adam,
                  forward_model_opt=tf.keras.optimizers.Adam,
                  forward_model_lr=0.001, alpha=1.0,
@@ -59,6 +59,7 @@ class ConservativeObjectiveModel(tf.Module):
 
         super().__init__()
         self.mmd_param = mmd_param
+        self.policy_model = policy_model
         self.rep_model = rep_model
         self.rep_model_lr = rep_model_lr
         self.forward_model = forward_model
@@ -66,6 +67,8 @@ class ConservativeObjectiveModel(tf.Module):
             forward_model_opt(learning_rate=forward_model_lr)
         self.rep_model_opt = \
             rep_model_opt(learning_rate=rep_model_lr)
+        self.policy_model_opt = \
+            policy_model_opt(learning_rate=policy_model_lr)
 
         # lagrangian dual descent variables
         self.log_alpha = tf.Variable(np.log(alpha).astype(np.float32))
@@ -160,10 +163,7 @@ class ConservativeObjectiveModel(tf.Module):
             rep_x = self.rep_model(x, training= True)
             d_pos_rep = self.forward_model(rep_x, training=True)
             mse = tf.keras.losses.mean_squared_error(y, d_pos_rep)
-            statistics[f'train/mse_L2'] = mse
-            #mean absolute error between y and d_pos_rep
-            mse_l1 = tf.keras.losses.mean_absolute_error(y, d_pos_rep)
-            statistics[f'train/mse_L1'] = mse_l1
+            statistics[f'train/mse'] = mse
 
             # evaluate how correct the rank fo the model predictions are
             rank_corr = spearman(y[:, 0], d_pos_rep[:, 0])
@@ -186,21 +186,27 @@ class ConservativeObjectiveModel(tf.Module):
 
             #calculate mmd loss(new added)
             logged_rep = tf.reduce_mean(rep_x, axis=0)
+            #here use rep_x_neg????
             learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
             mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
-            statistics[f'train/mmd_L2'] = mmd
-            mmd_l1 = tf.reduce_mean(tf.keras.losses.mean_absolute_error(learned_rep, logged_rep))
-            statistics[f'train/mmd_L1'] = mmd_l1
+            statistics[f'train/mmd'] = mmd
 
-
+            #turn = np.floor(e/100)
+            # loss that combines maximum likelihood with a constraintch
+            #mmd_param  =  self.mmd_param/(np.power(2, turn))
             mmd_param  =  self.mmd_param
-
+            #model_loss1 = mse + alpha_param * overestimation + mmd*mmd_param
             model_loss1 = mse + mmd*mmd_param
+            #model_loss1 = mse
+            #model_loss1 = mse + self.alpha * overestimation
             total_loss1 = tf.reduce_mean(model_loss1)
             statistics[f'train/loss1'] = total_loss1
             alpha_loss = tf.reduce_mean(alpha_loss)
             
+            #model_loss2 = mse + alpha_param * overestimation + mmd*mmd_param
             model_loss2 = mse + mmd*mmd_param
+            #model_loss2 = mse
+            #model_loss2 = mse + self.alpha * overestimation
             total_loss2 = tf.reduce_mean(model_loss2)
             statistics[f'train/loss2'] = total_loss2
 
@@ -303,6 +309,7 @@ class ConservativeObjectiveModel(tf.Module):
 
         #calculate mmd loss(new added)
         logged_rep = tf.reduce_mean(rep_x, axis=0)
+        #here use rep_x_neg????
         learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
         mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
         statistics[f'validate/mmd'] = mmd
@@ -419,3 +426,181 @@ class ConservativeObjectiveModel(tf.Module):
                 logger.record(name, loss, e)
 
 
+class VAETrainer(tf.Module):
+
+    def __init__(self,
+                 vae,
+                 optim=tf.keras.optimizers.Adam,
+                 lr=0.001, beta=1.0):
+        """Build a trainer for an ensemble of probabilistic neural networks
+        trained on bootstraps of a dataset
+
+        Args:
+
+        oracles: List[tf.keras.Model]
+            a list of keras model that predict distributions over scores
+        oracle_optim: __class__
+            the optimizer class to use for optimizing the oracle model
+        oracle__lr: float
+            the learning rate for the oracle model optimizer
+        """
+
+        super().__init__()
+        self.vae = vae
+        self.beta = beta
+
+        # create optimizers for each model in the ensemble
+        self.vae_optim = optim(learning_rate=lr)
+
+    @tf.function(experimental_relax_shapes=True)
+    def train_step(self,
+                   x):
+        """Perform a training step of gradient descent on an ensemble
+        using bootstrap weights for each model in the ensemble
+
+        Args:
+
+        x: tf.Tensor
+            a batch of training inputs shaped like [batch_size, channels]
+
+        Returns:
+
+        statistics: dict
+            a dictionary that contains logging information
+        """
+
+        statistics = dict()
+
+        with tf.GradientTape() as tape:
+
+            latent = self.vae.encode(x, training=True)
+            z = latent.mean()
+            prediction = self.vae.decode(z)
+
+            nll = -prediction.log_prob(x)
+
+            kld = latent.kl_divergence(
+                tfpd.MultivariateNormalDiag(
+                    loc=tf.zeros_like(z), scale_diag=tf.ones_like(z)))
+
+            total_loss = tf.reduce_mean(
+                nll) + tf.reduce_mean(kld) * self.beta
+
+        variables = self.vae.trainable_variables
+
+        self.vae_optim.apply_gradients(zip(
+            tape.gradient(total_loss, variables), variables))
+
+        statistics[f'vae/train/nll'] = nll
+        statistics[f'vae/train/kld'] = kld
+
+        return statistics
+
+    @tf.function(experimental_relax_shapes=True)
+    def validate_step(self,
+                      x):
+        """Perform a validation step on an ensemble of models
+        without using bootstrapping weights
+
+        Args:
+
+        x: tf.Tensor
+            a batch of validation inputs shaped like [batch_size, channels]
+
+        Returns:
+
+        statistics: dict
+            a dictionary that contains logging information
+        """
+
+        statistics = dict()
+
+        latent = self.vae.encode(x, training=True)
+        z = latent.mean()
+        prediction = self.vae.decode(z)
+
+        nll = -prediction.log_prob(x)
+
+        kld = latent.kl_divergence(
+            tfpd.MultivariateNormalDiag(
+                loc=tf.zeros_like(z), scale_diag=tf.ones_like(z)))
+
+        statistics[f'vae/validate/nll'] = nll
+        statistics[f'vae/validate/kld'] = kld
+
+        return statistics
+
+    def train(self,
+              dataset):
+        """Perform training using gradient descent on an ensemble
+        using bootstrap weights for each model in the ensemble
+
+        Args:
+
+        dataset: tf.data.Dataset
+            the training dataset already batched and prefetched
+
+        Returns:
+
+        loss_dict: dict
+            a dictionary mapping names to loss values for logging
+        """
+
+        statistics = defaultdict(list)
+        for x, y in dataset:
+            self.train_step(x)
+        """
+        for name in statistics.keys():
+            statistics[name] = tf.concat(statistics[name], axis=0)
+        """
+        return statistics
+
+    def validate(self,
+                 dataset):
+        """Perform validation on an ensemble of models without
+        using bootstrapping weights
+
+        Args:
+
+        dataset: tf.data.Dataset
+            the validation dataset already batched and prefetched
+
+        Returns:
+
+        loss_dict: dict
+            a dictionary mapping names to loss values for logging
+        """
+
+        statistics = defaultdict(list)
+        for x, y in dataset:
+            for name, tensor in self.validate_step(x).items():
+                statistics[name].append(tensor)
+        for name in statistics.keys():
+            statistics[name] = tf.concat(statistics[name], axis=0)
+        return statistics
+
+    def launch(self,
+               train_data,
+               validate_data,
+               logger,
+               epochs):
+        """Launch training and validation for the model for the specified
+        number of epochs, and log statistics
+
+        Args:
+
+        train_data: tf.data.Dataset
+            the training dataset already batched and prefetched
+        validate_data: tf.data.Dataset
+            the validation dataset already batched and prefetched
+        logger: Logger
+            an instance of the logger used for writing to tensor board
+        epochs: int
+            the number of epochs through the data sets to take
+        """
+        for e in range(epochs):
+            print(e)
+            for name, loss in self.train(train_data).items():
+                logger.record(name, loss, e)
+            for name, loss in self.validate(validate_data).items():
+                logger.record(name, loss, e)
