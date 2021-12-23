@@ -15,129 +15,6 @@ import json
 from tensorboard.plugins import projector
 import random
 
-"""
-@click.command()
-@click.option('--logging-dir',
-              default='coms-cleaned',
-              help='The directory in which tensorboard data is logged '
-                   'during the experiment.')
-@click.option('--task',
-              default='HopperController-Exact-v0',
-              help='The name of the design-bench task to use during '
-                   'the experiment.')
-@click.option('--task-relabel/--no-task-relabel',
-              default=True,
-              help='Whether to relabel the real Offline MBO data with '
-                   'predictions made by the oracle (this eliminates a '
-                   'train-test discrepency if the oracle is not an '
-                   'adequate model of the data).')
-@click.option('--normalize-ys/--no-normalize-ys',
-              default=True,
-              help='Whether to normalize the y values in the Offline MBO '
-                   'dataset before performing model-based optimization.')
-@click.option('--normalize-xs/--no-normalize-xs',
-              default=True,
-              help='Whether to normalize the x values in the Offline MBO '
-                   'dataset before performing model-based optimization. '
-                   '(note that x must not be discrete)')
-@click.option('--in-latent-space/--not-in-latent-space',
-              default=False,
-              help='Whether to embed the designs into the latent space of '
-                   'a VAE before performing model-based optimization '
-                   '(based on Gomez-Bombarelli et al. 2018).')
-@click.option('--vae-hidden-size',
-              default=64,
-              help='The hidden size of the neural network encoder '
-                   'and decoder models used in the VAE.')
-@click.option('--vae-latent-size',
-              default=256,
-              help='The size of the VAE latent vector space.')
-@click.option('--vae-activation',
-              default='relu',
-              help='The activation function used in the VAE.')
-@click.option('--vae-kernel-size',
-              default=3,
-              help='When the VAE is a CNN the kernel size of kernel '
-                   'tensor in convolution layers.')
-@click.option('--vae-num-blocks',
-              default=4,
-              help='The number of convolution blocks operating at '
-                   'different spatial resolutions.')
-@click.option('--vae-lr',
-              default=0.0003,
-              help='The learning rate of the VAE.')
-@click.option('--vae-beta',
-              default=1.0,
-              help='The weight of the KL loss when training the VAE.')
-@click.option('--vae-batch-size',
-              default=32,
-              help='The batch size used to train the VAE.')
-@click.option('--vae-val-size',
-              default=200,
-              help='The number of samples in the VAE validation set.')
-@click.option('--vae-epochs',
-              default=10,
-              help='The number of epochs to train the VAE.')
-@click.option('--particle-lr',
-              default=0.05,
-              help='The learning rate used in the COMs inner loop.')
-@click.option('--particle-train-gradient-steps',
-              default=50,
-              help='The number of gradient ascent steps used in the '
-                   'COMs inner loop.')
-@click.option('--particle-evaluate-gradient-steps',
-              default=50,
-              help='The number of gradient ascent steps used in the '
-                   'COMs inner loop.')
-@click.option('--particle-entropy-coefficient',
-              default=0.0,
-              help='The entropy bonus when solving the optimization problem.')
-@click.option('--forward-model-activations',
-              default=['relu', 'relu'],
-              multiple=True,
-              help='The series of activation functions for every layer '
-                   'in the forward model.')
-@click.option('--forward-model-hidden-size',
-              default=2048,
-              help='The hidden size of the forward model.')
-@click.option('--forward-model-final-tanh/--no-forward-model-final-tanh',
-              default=False,
-              help='Whether to use a final tanh activation as the final '
-                   'layer of the forward model.')
-@click.option('--forward-model-lr',
-              default=0.0003,
-              help='The learning rate of the forward model.')
-@click.option('--forward-model-alpha',
-              default=1.0,
-              help='The initial lagrange multiplier of the forward model.')
-@click.option('--forward-model-alpha-lr',
-              default=0.01,
-              help='The learning rate of the lagrange multiplier.')
-@click.option('--forward-model-overestimation-limit',
-              default=0.5,
-              help='The target used when tuning the lagrange multiplier.')
-@click.option('--forward-model-noise-std',
-              default=0.0,
-              help='Standard deviation of continuous noise added to '
-                   'designs when training the forward model.')
-@click.option('--forward-model-batch-size',
-              default=32,
-              help='The batch size used when training the forward model.')
-@click.option('--forward-model-val-size',
-              default=200,
-              help='The number of samples in the forward model '
-                   'validation set.')
-@click.option('--forward-model-epochs',
-              default=50,
-              help='The number of epochs to train the forward model.')
-@click.option('--evaluation-samples',
-              default=128,
-              help='The samples to generate when solving the model-based '
-                   'optimization problem.')
-@click.option('--fast/--not-fast',
-              default=True,
-              help='Whether to run experiment quickly and only log once.')
-"""
 def visualize1(data, labels, num):
     num = str(num)
     print(data.shape)
@@ -385,7 +262,7 @@ def coms_cleaned(
     xt_ori = trainer.optimize(xt, 1, training=False)
     xt_ori_rep = rep_model(xt_ori, training = False)
     prediction_ori = forward_model(xt_ori_rep, training=False).numpy()
-
+    tf.saved_model.save(trainer, logging_dir)
     #visualize1(rep_model(x, training = False), y, 0)
     # add zero x
     score = task.predict(xt)
