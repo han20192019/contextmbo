@@ -81,17 +81,20 @@ def average_point_single(id, metric, name):
     sns.pointplot(data=df_new, x="step", y="value", estimator=np.mean).set_title(metric+" "+name)
     plt.savefig("test5.jpg")
 
-def average_point_all(id, metric):
+def average_point_all(id, metric, task):
     experiment_id = id
     experiment = tb.data.experimental.ExperimentFromDev(experiment_id)
     df = experiment.get_scalars()
 
     df_new = df[df.tag.str.endswith(metric)]
-    n = df_new.run.apply(lambda run: run[19:])
+    n = df_new.run.apply(lambda run: run[19:]) #21
+    mmd = df_new.run.apply(lambda run: float(run[22:])) #21
     plt.figure(figsize=(16, 6))
-    sns.pointplot(data=df_new, x="step", y="value", hue = n, estimator=np.mean).set_title(metric)
-    plt.savefig("test6.jpg")
+    sns.pointplot(data=df_new, x=mmd, y="value", hue = n, estimator=np.mean).set_title(metric+" "+task)
+    plt.savefig(task+".jpg")
 
+"""
+#example
 plotmetric_line("Vw8qFOMgRbCD7Kx9E0W18Q", "train/mmd_L1/mean", "mmd5000")
 average_line_single("Vw8qFOMgRbCD7Kx9E0W18Q", "train/mmd_L1/mean", "mmd5000")
 average_line_all("Vw8qFOMgRbCD7Kx9E0W18Q", "train/mmd_L1/mean")
@@ -99,3 +102,11 @@ average_line_all("Vw8qFOMgRbCD7Kx9E0W18Q", "train/mmd_L1/mean")
 plotmetric_point("Vw8qFOMgRbCD7Kx9E0W18Q", "score/score/100th", "mmd5000")
 average_point_single("Vw8qFOMgRbCD7Kx9E0W18Q", "score/score/100th", "mmd5000")
 average_point_all("Vw8qFOMgRbCD7Kx9E0W18Q", "score/score/100th")
+"""
+
+ant_id = "jsa9OVIoTyyAlDjWv2ZbCQ"
+kitty_id = "VSV8q5zCQ5OH9Hg4ygIXng"
+conductor_id = "RY46F4rqQzimoObnB4Nyfw"
+average_point_all(ant_id, "score/score/100th", "ant")
+#average_point_all(kitty_id, "score/score/100th", "kitty")
+#average_point_all(conductor_id, "score/score/100th", "conductor")
