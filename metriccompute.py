@@ -34,8 +34,8 @@ def average_point_all(id, metric, task):
 
     df_new = df[df.tag.str.endswith(metric)]
     print(df_new.run)
-    n = df_new.run.apply(lambda run: run[12:]) #21 #18
-    mmd = df_new.run.apply(lambda run: float(run[15:])) #21
+    n = df_new.run.apply(lambda run: run[18:]) #21 #18
+    mmd = df_new.run.apply(lambda run: float(run[21:])) #21
     plt.figure(figsize=(16, 6))
     sns.pointplot(data=df_new, x=mmd, y="value", hue = n, estimator=np.mean).set_title(metric+" "+task)
     plt.savefig(task+".jpg")
@@ -57,7 +57,7 @@ def getnum(df):
 
     print("result:")
     print(prediction_value-df_prediction_error_value-df_mmd_loss_value)
-    return prediction_value-df_prediction_error_value-df_mmd_loss_value
+    return prediction_value-400*df_prediction_error_value-500*df_mmd_loss_value
 
 
 experiment_id = "jsa9OVIoTyyAlDjWv2ZbCQ"
@@ -69,6 +69,7 @@ for mmd in mmd_list:
     df_here = df[df.run.str.endswith("mmd"+str(mmd))]
     mmd_value = getnum(df_here)
     print(mmd_value)
+    print("\n")
     metric_result.append(mmd_value)
 print(mmd_list)
 print(metric_result)
@@ -76,7 +77,7 @@ plt.figure(figsize=(16, 6))
 sns.pointplot(x = mmd_list, y = metric_result)
 plt.savefig("metric.jpg")
 
-average_point_all(experiment_id, "score/score/100th", "ant")
+#average_point_all(experiment_id, "score/score/100th", "ant")
 
 
 
