@@ -242,7 +242,7 @@ def coms_cleaned(
     xt_ori = trainer.optimize(xt, 1, training=False)
     xt_ori_rep = rep_model(xt_ori, training = False)
     prediction_ori = forward_model(xt_ori_rep, training=False).numpy()
-    tf.saved_model.save(trainer, logging_dir)
+    #tf.saved_model.save(trainer, logging_dir)
     #visualize1(rep_model(x, training = False), y, 0)
     # add zero x
     score = task.predict(xt)
