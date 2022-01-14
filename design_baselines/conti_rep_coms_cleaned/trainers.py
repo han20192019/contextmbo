@@ -81,9 +81,8 @@ class ConservativeObjectiveModel(tf.Module):
 
         self.new_sample_size = 128 
         self.g = 0
-        self.gv = 0
         self.flag = 0
-        self.flagv=0
+        self.g0 = 0
 
     @tf.function(experimental_relax_shapes=True)
     def optimize(self, x, steps, **kwargs):
@@ -124,6 +123,7 @@ class ConservativeObjectiveModel(tf.Module):
 
                 # the conservatism of the current set of particles
                 loss = self.entropy_coefficient * entropy + score
+                #-mmd between xt_rep and rep_x from dataset(use same c1&c2)
 
             # update the particles to maximize the conservatism
             return tf.stop_gradient(
@@ -179,6 +179,9 @@ class ConservativeObjectiveModel(tf.Module):
             # calculate negative samples starting from the dataset
             x_neg = self.optimize(self.g, 5, training=False)
             self.g.assign(x_neg)
+            print("self.g")
+            print(self.g.shape)
+            statistics['train/distance'] = tf.reduce_mean(tf.linalg.norm(self.g - self.g0, axis=-1))
             x_neg = x_neg[:x.shape[0]]
             # calculate the prediction error and accuracy of the model
             rep_x_neg = self.rep_model(x_neg, training= False)
@@ -267,8 +270,7 @@ class ConservativeObjectiveModel(tf.Module):
         statistics[f'validate/rank_corr'] = rank_corr
 
         # calculate negative samples starting from the dataset
-        x_neg = self.optimize(self.gv, 5, training=False)
-        self.gv.assign(x_neg)
+        x_neg = self.g
         x_neg = x_neg[:x.shape[0]]
 
         # calculate the prediction error and accuracy of the model
@@ -321,6 +323,7 @@ class ConservativeObjectiveModel(tf.Module):
         for x, y in dataset:
             if self.flag == 0:
                 self.g = tf.Variable(x)
+                self.g0 = tf.Variable(x)
                 self.flag = 1
             for name, tensor in self.train_step(x, y).items():
                 statistics[name].append(tensor)
@@ -355,9 +358,6 @@ class ConservativeObjectiveModel(tf.Module):
 
         statistics = defaultdict(list)
         for x, y in dataset:
-            if self.flagv == 0:
-                self.gv = tf.Variable(x)
-                self.flagv = 1
             for name, tensor in self.validate_step(x, y).items():
                 statistics[name].append(tensor)
         for name in statistics.keys():

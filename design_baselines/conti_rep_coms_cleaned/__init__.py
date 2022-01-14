@@ -246,6 +246,9 @@ def coms_cleaned(
     #visualize1(rep_model(x, training = False), y, 0)
     # add zero x
     score = task.predict(xt)
+    score_g = task.predict(trainer.g)
+    logger.record(f"score/score_g", score_g, 0, percentile=True)
+    #print(score_g)
     for step in range(0, 1 + particle_evaluate_gradient_steps):
 
         # update the set of solution particles
