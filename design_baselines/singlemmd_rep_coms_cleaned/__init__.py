@@ -286,7 +286,8 @@ def coms_cleaned(
 
             np.save(os.path.join(logging_dir, "solution.npy"), solution)
 
-            logged_rep = tf.reduce_mean(initial_x, axis=0)
+            rep_initial_x = rep_model(initial_x, training=False)
+            logged_rep = tf.reduce_mean(rep_initial_x, axis=0)
             temp = tf.reshape(logged_rep, [1,logged_rep.shape[0]])
             group_logged_rep = tf.tile(temp, tf.constant([128, 1]))
             #learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
