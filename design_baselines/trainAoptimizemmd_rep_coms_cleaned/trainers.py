@@ -285,9 +285,10 @@ class ConservativeObjectiveModel(tf.Module):
 
         #calculate mmd loss(new added)
         logged_rep = tf.reduce_mean(rep_x, axis=0)
-        learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
-        mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
-        statistics[f'validate/mmd'] = mmd
+        temp = tf.reshape(logged_rep, [1,logged_rep.shape[0]])
+        group_logged_rep = tf.tile(temp, tf.constant([rep_x.shape[0], 1]))
+        mmd = tf.reduce_mean(tf.square(group_logged_rep-rep_x_neg), axis = 1)
+        statistics[f'validate/mmd_L2'] = mmd
 
         mmd_param  =  self.mmd_param
 
