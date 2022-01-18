@@ -304,7 +304,7 @@ def coms_cleaned(
             logger.record(f"solver/mmd_mean",
                             mmd_mean, step+1, percentile=True)
 
-            dif = prediction - mmd_param*tf.sqrt(mmd)
+            dif = prediction - mmd_param*tf.sqrt(mmd+1e-6)
             dif_scoresort = tf.gather(dif, ids)
             logger.record(f"solver/dif_100th",dif_scoresort[-1], step+1)
             logger.record(f"solver/dif_90th",dif_scoresort[int(dif_scoresort.shape[0]*0.9)], step+1)
@@ -312,6 +312,16 @@ def coms_cleaned(
 
             dif_mean = tf.reduce_mean(dif)
             logger.record(f"solver/dif_mean",
+                            dif_mean, step+1, percentile=True)
+
+            dif = prediction - mmd_param*mmd
+            dif_scoresort = tf.gather(dif, ids)
+            logger.record(f"solver/square_dif_100th",dif_scoresort[-1], step+1)
+            logger.record(f"solver/square_dif_90th",dif_scoresort[int(dif_scoresort.shape[0]*0.9)], step+1)
+            logger.record(f"solver/square_dif_50th",dif_scoresort[int(dif_scoresort.shape[0]*0.5)], step+1)
+
+            dif_mean = tf.reduce_mean(dif)
+            logger.record(f"solver/square_dif_mean",
                             dif_mean, step+1, percentile=True)
 
 
