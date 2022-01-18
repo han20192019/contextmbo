@@ -1,9 +1,9 @@
 from design_baselines.data import StaticGraphTask, build_pipeline
 from design_baselines.logger import Logger
 from design_baselines.utils import spearman
-from design_baselines.permmdtraining_rep_coms_cleaned.trainers import ConservativeObjectiveModel
-from design_baselines.permmdtraining_rep_coms_cleaned.nets import ForwardModel
-from design_baselines.permmdtraining_rep_coms_cleaned.nets import RepModel
+from design_baselines.trainAoptimizemmd_rep_coms_cleaned.trainers import ConservativeObjectiveModel
+from design_baselines.trainAoptimizemmd_rep_coms_cleaned.nets import ForwardModel
+from design_baselines.trainAoptimizemmd_rep_coms_cleaned.nets import RepModel
 import tensorflow as tf
 import numpy as np
 import os
@@ -109,6 +109,7 @@ def coms_cleaned(
         rep_model_hidden_size,
         noise_input,
         mmd_param,
+        optmmd_param,
         seed=10):
     """Solve a Model-Based Optimization problem using the method:
     Conservative Objective Models (COMs).
@@ -193,6 +194,14 @@ def coms_cleaned(
     # compute the normalized learning rate of the model
     particle_lr = particle_lr * np.sqrt(np.prod(input_shape))
 
+    # select the top k initial designs from the dataset
+    x = task.x
+    y = task.y
+    indices = tf.math.top_k(y[:, 0], k=evaluation_samples)[1]
+    initial_x = tf.gather(x, indices, axis=0)
+    initial_y = tf.gather(y, indices, axis=0)
+    xt = initial_x
+
     # make a trainer for the forward model
     trainer = ConservativeObjectiveModel(mmd_param = mmd_param, 
         rep_model=rep_model, 
@@ -203,7 +212,7 @@ def coms_cleaned(
         overestimation_limit=forward_model_overestimation_limit,
         particle_lr=particle_lr, noise_std=forward_model_noise_std,
         particle_gradient_steps=particle_train_gradient_steps,
-        entropy_coefficient=particle_entropy_coefficient)
+        entropy_coefficient=particle_entropy_coefficient, x_ori=initial_x, optmmd_param = optmmd_param)
 
     # create a data set
     val_size = int(x.shape[0]*0.3)
@@ -215,15 +224,6 @@ def coms_cleaned(
     # train the forward model
     trainer.launch(train_data, validate_data,
                    logger, forward_model_epochs)
-
-    # select the top k initial designs from the dataset
-    x = task.x
-    y = task.y
-    indices = tf.math.top_k(y[:, 0], k=evaluation_samples)[1]
-    initial_x = tf.gather(x, indices, axis=0)
-    initial_y = tf.gather(y, indices, axis=0)
-    xt = initial_x
-
 
     scores = []
     predictions = []
@@ -239,17 +239,23 @@ def coms_cleaned(
     logger.record(f"dataset_score", initial_y, 0, percentile=True)
     logger.record(f"score", score, 0, percentile=True)
 
-    xt_ori = trainer.optimize(xt, 1, training=False)
+    xt_ori = trainer.optimize(True, xt, 1, training=False)
     xt_ori_rep = rep_model(xt_ori, training = False)
     prediction_ori = forward_model(xt_ori_rep, training=False).numpy()
     tf.saved_model.save(trainer, logging_dir)
     #visualize1(rep_model(x, training = False), y, 0)
     # add zero x
     score = task.predict(xt)
+
+    rep_initial_x = rep_model(initial_x, training=False)
+    logged_rep = tf.reduce_mean(rep_initial_x, axis=0)
+    temp = tf.reshape(logged_rep, [1,logged_rep.shape[0]])
+    group_logged_rep = tf.tile(temp, tf.constant([128, 1]))
+
     for step in range(0, 1 + particle_evaluate_gradient_steps):
 
         # update the set of solution particles
-        xt = trainer.optimize(xt, 1, training=False)
+        xt = trainer.optimize(True, xt, 1, training=False)
         if not fast or step == particle_evaluate_gradient_steps:
             solution = xt
 
@@ -286,11 +292,7 @@ def coms_cleaned(
 
             np.save(os.path.join(logging_dir, "solution.npy"), solution)
 
-            rep_initial_x = rep_model(initial_x, training=False)
-            logged_rep = tf.reduce_mean(rep_initial_x, axis=0)
-            temp = tf.reshape(logged_rep, [1,logged_rep.shape[0]])
-            group_logged_rep = tf.tile(temp, tf.constant([128, 1]))
-
+            
             mmd = tf.reduce_mean(tf.square(group_logged_rep - xt_rep), axis=1)
             ids = tf.argsort(score)
             mmd_scoresort = tf.gather(mmd, ids)

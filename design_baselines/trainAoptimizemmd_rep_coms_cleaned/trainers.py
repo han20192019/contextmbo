@@ -16,7 +16,7 @@ class ConservativeObjectiveModel(tf.Module):
                  alpha_opt=tf.keras.optimizers.Adam,
                  alpha_lr=0.01, overestimation_limit=0.5,
                  particle_lr=0.05, particle_gradient_steps=50,
-                 entropy_coefficient=0.9, noise_std=0.0):
+                 entropy_coefficient=0.9, noise_std=0.0, x_ori=0, optmmd_param=0):
         """A trainer class for building a conservative objective model
         by optimizing a model to make conservative predictions
 
@@ -80,9 +80,11 @@ class ConservativeObjectiveModel(tf.Module):
         self.noise_std = noise_std
 
         self.new_sample_size = 128 
+        self.x_ori = x_ori
+        self.optmmd_param = optmmd_param
 
     @tf.function(experimental_relax_shapes=True)
-    def optimize(self, x, steps, **kwargs):
+    def optimize(self, flag, x, steps, **kwargs):
         """Using gradient descent find adversarial versions of x
         that maximize the conservatism of the model
 
@@ -118,8 +120,21 @@ class ConservativeObjectiveModel(tf.Module):
                 xt_rep = self.rep_model(xt, training = False)
                 score = self.forward_model(xt_rep, **kwargs)
 
-                # the conservatism of the current set of particles
-                loss = self.entropy_coefficient * entropy + score
+                if flag == False:
+                    # the conservatism of the current set of particles
+                    loss = self.entropy_coefficient * entropy + score
+                else:
+                    print("!!!")
+                    rep_initial_x = (self.rep_model)(self.x_ori, training=False)
+                    logged_rep = tf.reduce_mean(rep_initial_x, axis=0)
+                    temp = tf.reshape(logged_rep, [1,logged_rep.shape[0]])
+                    group_logged_rep = tf.tile(temp, tf.constant([xt_rep.shape[0], 1]))
+
+                    mmd = tf.reduce_mean(tf.square(group_logged_rep-xt_rep), axis=1)
+                    print("mmd")
+                    print(mmd.shape)
+                    mmd = tf.reduce_mean(mmd)
+                    loss = self.entropy_coefficient * entropy + score - self.optmmd_param*mmd
 
             # update the particles to maximize the conservatism
             return tf.stop_gradient(
@@ -170,7 +185,7 @@ class ConservativeObjectiveModel(tf.Module):
             statistics[f'train/rank_corr'] = rank_corr
 
             # calculate negative samples starting from the dataset
-            x_neg = self.optimize(
+            x_neg = self.optimize(False, 
                 x, self.particle_gradient_steps, training=False)
 
             # calculate the prediction error and accuracy of the model
@@ -190,6 +205,7 @@ class ConservativeObjectiveModel(tf.Module):
             group_logged_rep = tf.tile(temp, tf.constant([rep_x.shape[0], 1]))
             mmd = tf.reduce_mean(tf.square(group_logged_rep-rep_x_neg), axis = 1)
             statistics[f'train/mmd_L2'] = mmd
+
 
             mmd_param  =  self.mmd_param
 
@@ -253,7 +269,7 @@ class ConservativeObjectiveModel(tf.Module):
         statistics[f'validate/rank_corr'] = rank_corr
 
         # calculate negative samples starting from the dataset
-        x_neg = self.optimize(
+        x_neg = self.optimize(False,
             x, self.particle_gradient_steps, training=False)
 
         # calculate the prediction error and accuracy of the model
@@ -269,10 +285,9 @@ class ConservativeObjectiveModel(tf.Module):
 
         #calculate mmd loss(new added)
         logged_rep = tf.reduce_mean(rep_x, axis=0)
-        temp = tf.reshape(logged_rep, [1,logged_rep.shape[0]])
-        group_logged_rep = tf.tile(temp, tf.constant([rep_x.shape[0], 1]))
-        mmd = tf.reduce_mean(tf.square(group_logged_rep-rep_x_neg), axis = 1)
-        statistics[f'validate/mmd_L2'] = mmd
+        learned_rep = tf.reduce_mean(rep_x_neg, axis=0)
+        mmd = tf.reduce_mean(tf.keras.losses.mean_squared_error(learned_rep, logged_rep))
+        statistics[f'validate/mmd'] = mmd
 
         mmd_param  =  self.mmd_param
 
@@ -319,7 +334,7 @@ class ConservativeObjectiveModel(tf.Module):
         
         return statistics
         """
-
+        
     def validate(self, dataset):
         """Perform validation on an ensemble of models without
         using bootstrapping weights
